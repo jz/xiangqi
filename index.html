@@ -993,7 +993,7 @@ document.getElementById('btn-new').addEventListener('click', ()=>{
     if (!confirm('开始新局？当前对局将丢失。')) return;
   }
   newGame();
-  showToast('新局已开始');
+  toast('新局已开始');
 });
 document.getElementById('btn-undo').addEventListener('click', undo);
 document.getElementById('btn-redo').addEventListener('click', redo);
