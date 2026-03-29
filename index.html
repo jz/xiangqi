@@ -751,173 +751,259 @@ function redo() {
 }
 
 // ═══════════════════════════════════════════════════════════
-// AI ENGINE
+// AI ENGINE (Web Worker with iterative deepening + transposition table)
 // ═══════════════════════════════════════════════════════════
 
-// Base piece values
-const PIECE_VAL = { K:10000, A:120, B:120, N:400, R:900, C:450, P:70 };
+const WORKER_SRC = `
+'use strict';
+const RED='red',BLACK='black';
+const PVAL={K:10000,A:120,B:150,N:410,R:900,C:450,P:70};
+const VICTIM_VAL={P:10,N:41,B:15,A:15,C:45,R:90,K:1000};
+const ATTACKER_ORDER={P:1,N:2,B:2,A:2,C:3,R:4,K:5};
 
-// Positional tables (rows 0-9, cols 0-8) from Red's perspective
-// Row 0 = Black's home, Row 9 = Red's home
-const POS = {
-  K: [
-    [0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],
-    [0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],
-    [0,0,0,0,0,0,0,0,0],
-    [0,0,0,10,5,10,0,0,0],
-    [0,0,0,10,12,10,0,0,0],
-    [0,0,0,5,8,5,0,0,0],
-  ],
-  A: [
-    [0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],
-    [0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],
-    [0,0,0,0,0,0,0,0,0],
-    [0,0,0,20,0,20,0,0,0],
-    [0,0,0,0,23,0,0,0,0],
-    [0,0,0,20,0,20,0,0,0],
-  ],
-  B: [
-    [0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],
-    [0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],
-    [0,0,20,0,0,0,20,0,0],
-    [0,0,0,0,0,0,0,0,0],
-    [20,0,0,0,20,0,0,0,20],
-    [0,0,0,0,0,0,0,0,0],
-    [0,0,20,0,0,0,20,0,0],
-  ],
-  N: [
-    [4,8,16,12,4,12,16,8,4],
-    [4,10,28,16,8,16,28,10,4],
-    [12,14,16,20,18,20,16,14,12],
-    [8,26,30,26,28,26,30,26,8],
-    [6,22,26,26,28,26,26,22,6],
-    [4,12,18,22,24,22,18,12,4],
-    [4,6,16,14,12,14,16,6,4],
-    [0,4,10,10,2,10,10,4,0],
-    [0,2,4,4,-2,4,4,2,0],
-    [0,-4,0,0,0,0,0,-4,0],
-  ],
-  R: [
-    [14,14,12,18,16,18,12,14,14],
-    [16,20,18,24,26,24,18,20,16],
-    [12,12,12,18,18,18,12,12,12],
-    [12,18,16,22,22,22,16,18,12],
-    [12,14,12,18,18,18,12,14,12],
-    [12,16,14,20,20,20,14,16,12],
-    [6,6,6,14,14,14,6,6,6],
-    [6,10,8,14,14,14,8,10,6],
-    [8,10,10,12,12,12,10,10,8],
-    [6,10,8,14,0,14,8,10,6],
-  ],
-  C: [
-    [6,4,0,14,0,14,0,4,6],
-    [8,6,4,16,6,16,4,6,8],
-    [6,0,2,10,6,10,2,0,6],
-    [4,0,0,6,10,6,0,0,4],
-    [2,0,4,0,12,0,4,0,2],
-    [2,2,2,0,14,0,2,2,2],
-    [0,0,2,2,14,2,2,0,0],
-    [4,0,0,2,14,2,0,0,4],
-    [8,6,4,6,16,6,4,6,8],
-    [0,0,2,6,0,6,2,0,0],
-  ],
-  P: [
-    [0,3,6,9,12,9,6,3,0],
-    [18,36,56,80,120,80,56,36,18],
-    [14,26,42,60,80,60,42,26,14],
-    [10,20,30,34,40,34,30,20,10],
-    [2,4,8,14,16,14,8,4,2],
-    [0,0,0,0,0,0,0,0,0],   // before crossing river
-    [2,0,8,0,8,0,8,0,2],
-    [0,0,0,0,8,0,0,0,0],
-    [0,0,0,0,10,0,0,0,0],
-    [0,0,0,2,10,2,0,0,0],
-  ],
+function pc(p){if(!p)return null;return p===p.toUpperCase()?RED:BLACK;}
+function isR(p){return p&&p===p.toUpperCase();}
+function en(c){return c===RED?BLACK:RED;}
+function inB(r,c){return r>=0&&r<10&&c>=0&&c<9;}
+function inP(r,c,color){
+  if(color===RED)return r>=7&&r<=9&&c>=3&&c<=5;
+  return r>=0&&r<=2&&c>=3&&c<=5;
+}
+function applyMove(b,from,to){
+  const nb=b.map(r=>[...r]);
+  nb[to.row][to.col]=nb[from.row][from.col];
+  nb[from.row][from.col]='';
+  return nb;
+}
+function rawMoves(b,r,c){
+  const p=b[r][c];if(!p)return[];
+  const color=pc(p),type=p.toUpperCase(),moves=[];
+  const add=(nr,nc)=>{if(!inB(nr,nc))return;if(pc(b[nr][nc])===color)return;moves.push({row:nr,col:nc});};
+  switch(type){
+    case 'K':
+      [[1,0],[-1,0],[0,1],[0,-1]].forEach(([dr,dc])=>{const nr=r+dr,nc=c+dc;if(inB(nr,nc)&&inP(nr,nc,color))add(nr,nc);});
+      break;
+    case 'A':
+      [[1,1],[1,-1],[-1,1],[-1,-1]].forEach(([dr,dc])=>{const nr=r+dr,nc=c+dc;if(inB(nr,nc)&&inP(nr,nc,color))add(nr,nc);});
+      break;
+    case 'B':
+      [[2,2],[2,-2],[-2,2],[-2,-2]].forEach(([dr,dc])=>{
+        const nr=r+dr,nc=c+dc;
+        if(!inB(nr,nc))return;
+        if(color===RED&&nr<5)return;
+        if(color===BLACK&&nr>4)return;
+        if(b[r+dr/2][c+dc/2])return;
+        add(nr,nc);
+      });
+      break;
+    case 'N':{
+      const dirs=[[-1,0,[[-2,-1],[-2,1]]],[1,0,[[2,-1],[2,1]]],[0,-1,[[-1,-2],[1,-2]]],[0,1,[[-1,2],[1,2]]]];
+      for(const[lr,lc,steps]of dirs){const mr=r+lr,mc=c+lc;if(!inB(mr,mc)||b[mr][mc])continue;for(const[dr,dc]of steps){const nr=r+dr,nc=c+dc;if(!inB(nr,nc))continue;if(pc(b[nr][nc])===color)continue;moves.push({row:nr,col:nc});}}
+      break;
+    }
+    case 'R':
+      [[1,0],[-1,0],[0,1],[0,-1]].forEach(([dr,dc])=>{let nr=r+dr,nc=c+dc;while(inB(nr,nc)){if(b[nr][nc]){add(nr,nc);break;}moves.push({row:nr,col:nc});nr+=dr;nc+=dc;}});
+      break;
+    case 'C':
+      [[1,0],[-1,0],[0,1],[0,-1]].forEach(([dr,dc])=>{let nr=r+dr,nc=c+dc,jumped=false;while(inB(nr,nc)){if(!jumped){if(b[nr][nc])jumped=true;else moves.push({row:nr,col:nc});}else{if(b[nr][nc]){if(pc(b[nr][nc])!==color)moves.push({row:nr,col:nc});break;}}nr+=dr;nc+=dc;}});
+      break;
+    case 'P':
+      if(color===RED){add(r-1,c);if(r<=4){add(r,c-1);add(r,c+1);}}
+      else{add(r+1,c);if(r>=5){add(r,c-1);add(r,c+1);}}
+      break;
+  }
+  return moves;
+}
+function findKing(b,color){const k=color===RED?'K':'k';for(let r=0;r<10;r++)for(let c=0;c<9;c++)if(b[r][c]===k)return{row:r,col:c};return null;}
+function flyingGeneral(b,color,king){
+  const oppKing=findKing(b,en(color));
+  if(!oppKing||oppKing.col!==king.col)return false;
+  const minR=Math.min(king.row,oppKing.row),maxR=Math.max(king.row,oppKing.row);
+  for(let r=minR+1;r<maxR;r++)if(b[r][king.col])return false;
+  return true;
+}
+function isInCheck(b,color){
+  const king=findKing(b,color);if(!king)return false;
+  const opp=en(color);
+  for(let r=0;r<10;r++)for(let c=0;c<9;c++){if(pc(b[r][c])!==opp)continue;if(rawMoves(b,r,c).some(m=>m.row===king.row&&m.col===king.col))return true;}
+  return flyingGeneral(b,color,king);
+}
+function legalMovesFor(b,r,c){
+  const color=pc(b[r][c]);if(!color)return[];
+  return rawMoves(b,r,c).filter(m=>{const nb=applyMove(b,{row:r,col:c},m);return !isInCheck(nb,color);});
+}
+function countMobility(b,color){
+  let n=0;
+  for(let r=0;r<10;r++)for(let c=0;c<9;c++)if(pc(b[r][c])===color)n+=legalMovesFor(b,r,c).length;
+  return n;
+}
+
+// Enhanced piece-square tables (row 0=black home, row 9=red home, from Red perspective)
+const PST={
+  K:[[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[0,0,0,15,10,15,0,0,0],[0,0,0,15,20,15,0,0,0],[0,0,0,10,15,10,0,0,0]],
+  A:[[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[0,0,0,25,0,25,0,0,0],[0,0,0,0,28,0,0,0,0],[0,0,0,25,0,25,0,0,0]],
+  B:[[0,0,20,0,0,0,20,0,0],[0,0,0,0,0,0,0,0,0],[20,0,0,0,25,0,0,0,20],[0,0,0,0,0,0,0,0,0],[0,0,20,0,0,0,20,0,0],[0,0,20,0,0,0,20,0,0],[0,0,0,0,0,0,0,0,0],[20,0,0,0,25,0,0,0,20],[0,0,0,0,0,0,0,0,0],[0,0,20,0,0,0,20,0,0]],
+  N:[[4,8,16,12,4,12,16,8,4],[4,10,28,16,8,16,28,10,4],[12,14,16,20,18,20,16,14,12],[8,26,30,26,28,26,30,26,8],[6,22,26,26,28,26,26,22,6],[4,12,18,22,24,22,18,12,4],[4,6,16,14,12,14,16,6,4],[0,4,10,10,2,10,10,4,0],[0,2,4,4,-2,4,4,2,0],[0,-4,0,0,0,0,0,-4,0]],
+  R:[[14,14,12,18,16,18,12,14,14],[16,20,18,24,26,24,18,20,16],[12,12,12,18,18,18,12,12,12],[12,18,16,22,22,22,16,18,12],[12,14,12,18,18,18,12,14,12],[12,16,14,20,20,20,14,16,12],[6,6,6,14,14,14,6,6,6],[6,10,8,14,14,14,8,10,6],[8,10,10,12,12,12,10,10,8],[6,10,8,14,0,14,8,10,6]],
+  C:[[6,4,0,14,0,14,0,4,6],[8,6,4,16,6,16,4,6,8],[6,0,2,10,6,10,2,0,6],[4,0,0,6,10,6,0,0,4],[2,0,4,0,12,0,4,0,2],[2,2,2,0,14,0,2,2,2],[0,0,2,2,14,2,2,0,0],[4,0,0,2,14,2,0,0,4],[8,6,4,6,16,6,4,6,8],[0,0,2,6,0,6,2,0,0]],
+  P:[[0,3,6,9,12,9,6,3,0],[18,36,56,80,120,80,56,36,18],[14,26,42,60,80,60,42,26,14],[10,20,30,34,40,34,30,20,10],[2,4,8,14,16,14,8,4,2],[0,0,0,0,0,0,0,0,0],[2,0,8,0,8,0,8,0,2],[0,0,0,0,8,0,0,0,0],[0,0,0,0,10,0,0,0,0],[0,0,0,2,10,2,0,0,0]],
 };
 
-function posScore(p, r, c) {
-  const type = p.toUpperCase();
-  const tbl = POS[type];
-  if (!tbl) return 0;
-  // Red: use table as-is; Black: mirror rows
-  const row = isRed(p) ? r : (9 - r);
+function posScore(p,r,c){
+  const type=p.toUpperCase(),tbl=PST[type];if(!tbl)return 0;
+  const row=isR(p)?r:(9-r);
   return tbl[row][c];
 }
 
-function evaluate(b) {
-  // Returns score from Red's perspective (positive = Red better)
-  let score = 0;
-  for (let r = 0; r < 10; r++) {
-    for (let c = 0; c < 9; c++) {
-      const p = b[r][c];
-      if (!p) continue;
-      const val = PIECE_VAL[p.toUpperCase()] + posScore(p, r, c);
-      score += isRed(p) ? val : -val;
-    }
+function evaluate(b){
+  let score=0;
+  let redPieces=0,blackPieces=0;
+  for(let r=0;r<10;r++)for(let c=0;c<9;c++){
+    const p=b[r][c];if(!p)continue;
+    const val=PVAL[p.toUpperCase()]+posScore(p,r,c);
+    if(isR(p)){score+=val;redPieces++;}else{score-=val;blackPieces++;}
+  }
+  // King safety: penalty if in check
+  if(isInCheck(b,RED))score-=90;
+  if(isInCheck(b,BLACK))score+=90;
+  // Center control bonus (cols 3-5, rows 4-5)
+  for(let r=4;r<=5;r++)for(let c=3;c<=5;c++){
+    const p=b[r][c];if(!p)continue;
+    if(isR(p))score+=8;else score-=8;
+  }
+  // Mobility (only compute in quieter positions to save time)
+  if(redPieces+blackPieces<28){
+    score+=countMobility(b,RED)*2;
+    score-=countMobility(b,BLACK)*2;
   }
   return score;
 }
 
-function getAllLegalMoves(b, color) {
-  const moves = [];
-  for (let r = 0; r < 10; r++) {
-    for (let c = 0; c < 9; c++) {
-      if (pieceColor(b[r][c]) !== color) continue;
-      const from = {row:r, col:c};
-      for (const to of legalMovesFor(b, r, c)) {
-        moves.push({from, to});
-      }
+// Zobrist hashing
+const PIECES='KkAaBbRrNnCcPp';
+const ZT=[];
+for(let r=0;r<10;r++){ZT[r]=[];for(let c=0;c<9;c++){ZT[r][c]={};for(const p of PIECES)ZT[r][c][p]=(Math.random()*0x7FFFFFFF|0)+1;}}
+const ZBLACK=(Math.random()*0x7FFFFFFF|0)+1;
+function zobrist(b,color){
+  let h=color===BLACK?ZBLACK:0;
+  for(let r=0;r<10;r++)for(let c=0;c<9;c++){const p=b[r][c];if(p)h^=ZT[r][c][p];}
+  return h;
+}
+
+// Transposition table
+const TT=new Map();
+const EXACT=0,LOWER=1,UPPER=2;
+
+// Killer moves per depth
+const killers=Array.from({length:24},()=>[null,null]);
+
+function mvvLva(b,move){
+  const victim=b[move.to.row][move.to.col];
+  if(victim){
+    const vv=VICTIM_VAL[victim.toUpperCase()]||0;
+    const av=ATTACKER_ORDER[b[move.from.row][move.from.col].toUpperCase()]||5;
+    return 2000+vv*10-av;
+  }
+  return 0;
+}
+
+function killerScore(move,d){
+  if(d>=0&&d<24&&killers[d]){
+    const k=killers[d];
+    for(const km of k){
+      if(km&&km.from.row===move.from.row&&km.from.col===move.from.col&&km.to.row===move.to.row&&km.to.col===move.to.col)return 1000;
     }
   }
-  // Order: captures first (improves pruning)
-  moves.sort((a, mv) => (b[mv.to.row][mv.to.col] ? 1 : 0) - (b[a.to.row][a.to.col] ? 1 : 0));
+  return 0;
+}
+
+function getAllMoves(b,color,d){
+  const moves=[];
+  for(let r=0;r<10;r++)for(let c=0;c<9;c++){
+    if(pc(b[r][c])!==color)continue;
+    for(const to of legalMovesFor(b,r,c))moves.push({from:{row:r,col:c},to});
+  }
+  moves.sort((a,mv)=>(mvvLva(b,mv)+killerScore(mv,d))-(mvvLva(b,a)+killerScore(a,d)));
   return moves;
 }
 
-function alphaBeta(b, depth, alpha, beta, isMaximizing) {
-  if (depth === 0) return evaluate(b);
-  const color = isMaximizing ? RED : BLACK;
-  const moves = getAllLegalMoves(b, color);
-  if (moves.length === 0) return isMaximizing ? -9000 : 9000;
+let tStart,tLimit;
 
-  if (isMaximizing) {
-    let best = -Infinity;
-    for (const {from, to} of moves) {
-      const nb = applyMove(b, from, to);
-      best = Math.max(best, alphaBeta(nb, depth-1, alpha, beta, false));
-      alpha = Math.max(alpha, best);
-      if (beta <= alpha) break;
-    }
-    return best;
-  } else {
-    let best = Infinity;
-    for (const {from, to} of moves) {
-      const nb = applyMove(b, from, to);
-      best = Math.min(best, alphaBeta(nb, depth-1, alpha, beta, true));
-      beta = Math.min(beta, best);
-      if (beta <= alpha) break;
-    }
-    return best;
+function ab(b,depth,alpha,beta,isMax,color){
+  if(Date.now()-tStart>tLimit)return{score:evaluate(b),timeout:true};
+  const hash=zobrist(b,color);
+  const tte=TT.get(hash);
+  if(tte&&tte.depth>=depth){
+    if(tte.flag===EXACT)return{score:tte.score};
+    if(tte.flag===LOWER&&tte.score>alpha)alpha=tte.score;
+    if(tte.flag===UPPER&&tte.score<beta)beta=tte.score;
+    if(alpha>=beta)return{score:tte.score};
   }
+  if(depth===0)return{score:evaluate(b)};
+
+  const moves=getAllMoves(b,color,depth);
+  if(!moves.length)return{score:isMax?-9500:9500};
+
+  let best=isMax?-Infinity:Infinity,bestMove=null,timedOut=false;
+  const origAlpha=alpha;
+
+  for(const move of moves){
+    const nb=applyMove(b,move.from,move.to);
+    const res=ab(nb,depth-1,alpha,beta,!isMax,en(color));
+    if(res.timeout){timedOut=true;break;}
+    const val=res.score;
+    if(isMax?val>best:val<best){best=val;bestMove=move;}
+    if(isMax)alpha=Math.max(alpha,best);else beta=Math.min(beta,best);
+    if(beta<=alpha){
+      if(!b[move.to.row][move.to.col]&&depth<24){
+        killers[depth][1]=killers[depth][0];killers[depth][0]=move;
+      }
+      break;
+    }
+    if(Math.abs(best)>9000)break;
+  }
+
+  if(!timedOut){
+    const flag=best<=origAlpha?UPPER:best>=beta?LOWER:EXACT;
+    TT.set(hash,{depth,score:best,flag});
+  }
+  return{score:best,move:bestMove,timeout:timedOut};
 }
 
-function getBestMove(b, color, depth) {
-  const moves = getAllLegalMoves(b, color);
-  if (moves.length === 0) return null;
-  const isMax = color === RED;
-  let best = isMax ? -Infinity : Infinity;
-  let bestMove = moves[0]; // fallback
-
-  for (const move of moves) {
-    const nb = applyMove(b, move.from, move.to);
-    const val = alphaBeta(nb, depth - 1, -Infinity, Infinity, !isMax);
-    if (isMax ? val > best : val < best) {
-      best = val;
-      bestMove = move;
+function iterDeep(b,color,maxD,limit){
+  tStart=Date.now();tLimit=limit;
+  TT.clear();
+  killers.forEach(k=>{k[0]=null;k[1]=null;});
+  const isMax=color===RED;
+  let bestMove=null;
+  for(let d=1;d<=maxD;d++){
+    const moves=getAllMoves(b,color,d);
+    if(!moves.length)break;
+    let best=isMax?-Infinity:Infinity,dm=moves[0],timedOut=false;
+    for(const move of moves){
+      if(Date.now()-tStart>tLimit){timedOut=true;break;}
+      const nb=applyMove(b,move.from,move.to);
+      const res=ab(nb,d-1,-Infinity,Infinity,!isMax,en(color));
+      if(res.timeout){timedOut=true;break;}
+      if(isMax?res.score>best:res.score<best){best=res.score;dm=move;}
     }
+    bestMove=dm;
+    if(timedOut)break;
+    if(Math.abs(best)>9000)break;
   }
   return bestMove;
 }
+
+onmessage=function(e){
+  const{board,color,maxDepth,timeLimit}=e.data;
+  const move=iterDeep(board,color,maxDepth,timeLimit);
+  postMessage(move);
+};
+`;
+
+const workerBlob = new Blob([WORKER_SRC], {type: 'application/javascript'});
+const workerURL  = URL.createObjectURL(workerBlob);
+let   aiWorker   = null;
 
 function showAIThinking(visible) {
   document.getElementById('ai-thinking').classList.toggle('visible', visible);
@@ -928,19 +1014,32 @@ function scheduleAIMove() {
   aiThinking = true;
   showAIThinking(true);
   const myToken = ++aiMoveToken;
-  const delays = [500, 1000, 1500];
-  const delay = delays[difficulty - 1] || 1000;
 
-  setTimeout(() => {
-    if (myToken !== aiMoveToken) return; // cancelled by undo
-    const aiColor = enemy(playerColor);
-    const move = getBestMove(board, aiColor, difficulty);
+  const aiColor  = enemy(playerColor);
+  const depths   = [2, 3, 5];
+  const times    = [1000, 2000, 4000];
+  const maxDepth = depths[difficulty - 1] || 3;
+  const timeLimit = times[difficulty - 1] || 2000;
+
+  if (aiWorker) { aiWorker.terminate(); aiWorker = null; }
+  aiWorker = new Worker(workerURL);
+
+  aiWorker.onmessage = function(e) {
+    aiWorker = null;
+    if (myToken !== aiMoveToken) return;
     aiThinking = false;
     showAIThinking(false);
-    if (move) {
-      doMove(move.from, move.to);
-    }
-  }, delay);
+    const move = e.data;
+    if (move) doMove(move.from, move.to);
+  };
+  aiWorker.onerror = function(err) {
+    console.error('AI worker error:', err);
+    aiWorker = null;
+    aiThinking = false;
+    showAIThinking(false);
+  };
+
+  aiWorker.postMessage({ board, color: aiColor, maxDepth, timeLimit });
 }
 
 // ─── AI MODE UI HANDLERS ─────────────────────────────────────
@@ -955,6 +1054,7 @@ function cancelAI() {
   aiMoveToken++;
   aiThinking = false;
   showAIThinking(false);
+  if (aiWorker) { aiWorker.terminate(); aiWorker = null; }
 }
 
 function applyAIModeSettings() {
