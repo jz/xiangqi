@@ -1023,8 +1023,8 @@ function scheduleAIMove() {
   showAIThinking(true);
   const myToken = ++aiMoveToken;
 
-  const aiColor  = enemy(playerColor);
-  
+  const aiColor = enemy(playerColor);
+
   if (aiEngine === 'pikafish') {
     // Use Pikafish API
     schedulePikafishMove(myToken, aiColor);
@@ -1114,10 +1114,6 @@ function parsePikafishMove(moveStr) {
     to: { row: toRow, col: toCol }
   };
 }
-  };
-
-  aiWorker.postMessage({ board, color: aiColor, maxDepth, timeLimit });
-}
 
 // ─── AI MODE UI HANDLERS ─────────────────────────────────────
 function setActiveBtn(group, active) {
@@ -1186,8 +1182,6 @@ document.getElementById('btn-diff-hard').addEventListener('click', () => {
   setActiveBtn(['btn-diff-easy','btn-diff-medium','btn-diff-hard'], 'btn-diff-hard');
 });
 
-// ═══════════════════════════════════════════════════════════
-
 document.getElementById('btn-engine-local').addEventListener('click', () => {
   aiEngine = 'local';
   setActiveBtn(['btn-engine-local','btn-engine-pikafish'], 'btn-engine-local');
@@ -1199,6 +1193,8 @@ document.getElementById('btn-engine-pikafish').addEventListener('click', () => {
   setActiveBtn(['btn-engine-local','btn-engine-pikafish'], 'btn-engine-pikafish');
   toast('切换到Pikafish引擎（需要网络）');
 });
+
+// ═══════════════════════════════════════════════════════════
 // RENDERING
 // ═══════════════════════════════════════════════════════════
 const canvas = document.getElementById('board');
