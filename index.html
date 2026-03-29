@@ -1089,6 +1089,7 @@ async function schedulePikafishMove(myToken, aiColor) {
     console.error('Pikafish API error:', error);
     toast('Pikafish API 连接失败，切换到本地AI');
     // Fallback to local AI
+    // Fallback to local AI
     aiEngine = 'local';
     scheduleLocalAIMove(myToken, aiColor);
     return;
