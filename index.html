@@ -208,6 +208,26 @@ label.btn-like:hover { background: rgba(212,168,67,0.3); border-color: #d4a843; 
 }
 #captured-black { color: #888; }
 #captured-red { color: #e84040; }
+
+/* AI Mode UI */
+.mode-btns { display:flex; gap:6px; flex-wrap:wrap; }
+.mode-btn {
+  flex:1; padding:7px 8px;
+  border:1px solid rgba(212,168,67,0.4);
+  background:rgba(212,168,67,0.1);
+  color:#d4a843; border-radius:4px; cursor:pointer;
+  font-size:0.8rem; transition:all 0.2s; text-align:center;
+  letter-spacing:0.5px;
+}
+.mode-btn:hover { background:rgba(212,168,67,0.25); }
+.mode-btn.active { background:rgba(212,168,67,0.35); border-color:#d4a843; font-weight:bold; }
+#ai-sub-options { margin-top:10px; }
+#ai-sub-options .sub-label { font-size:0.75rem; color:#aaa; margin-bottom:5px; margin-top:8px; }
+#ai-thinking {
+  display:none; color:#aaa; font-size:0.82rem;
+  text-align:center; padding:4px; margin-top:6px;
+}
+#ai-thinking.visible { display:block; animation:pulse 1s infinite; }
 </style>
 </head>
 <body>
@@ -221,6 +241,29 @@ label.btn-like:hover { background: rgba(212,168,67,0.3); border-color: #d4a843; 
     <div class="card">
       <h3>对局状态</h3>
       <div id="status-text" class="red">红方先行</div>
+      <div id="ai-thinking">AI思考中...</div>
+    </div>
+
+    <!-- Game Mode -->
+    <div class="card">
+      <h3>对局模式</h3>
+      <div class="mode-btns">
+        <button class="mode-btn active" id="btn-mode-pvp">双人对弈</button>
+        <button class="mode-btn" id="btn-mode-ai">人机对弈</button>
+      </div>
+      <div id="ai-sub-options" style="display:none">
+        <div class="sub-label">执子颜色</div>
+        <div class="mode-btns">
+          <button class="mode-btn active" id="btn-color-red">红方</button>
+          <button class="mode-btn" id="btn-color-black">黑方</button>
+        </div>
+        <div class="sub-label">难度</div>
+        <div class="mode-btns">
+          <button class="mode-btn" id="btn-diff-easy">简单</button>
+          <button class="mode-btn active" id="btn-diff-medium">中等</button>
+          <button class="mode-btn" id="btn-diff-hard">困难</button>
+        </div>
+      </div>
     </div>
 
     <!-- Controls -->
@@ -308,6 +351,13 @@ let history     = [];   // array of {board,turn,captured,moveStr}
 let future      = [];
 let capturedRed = [];   // pieces red has captured (black pieces)
 let capturedBlack = []; // pieces black has captured (red pieces)
+
+// ─── AI STATE ────────────────────────────────────────────────
+let gameMode    = 'pvp'; // 'pvp' | 'ai'
+let playerColor = RED;   // color the human plays in AI mode
+let difficulty  = 2;     // search depth: 1=easy, 2=medium, 3=hard
+let aiThinking  = false;
+let aiMoveToken = 0;     // increment to cancel pending AI move
 
 // ═══════════════════════════════════════════════════════════
 // FEN PARSING
@@ -574,6 +624,7 @@ function moveNotation(b, from, to) {
 // GAME ACTIONS
 // ═══════════════════════════════════════════════════════════
 function newGame() {
+  cancelAI();
   const parsed = parseFEN(START_FEN);
   board = parsed.board;
   turn  = parsed.turn;
@@ -583,11 +634,15 @@ function newGame() {
   future  = [];
   capturedRed   = [];
   capturedBlack = [];
+  document.getElementById('move-list').innerHTML = '';
   render();
   updateUI();
 }
 
 function selectCell(r, c) {
+  // Block human input when AI is thinking or when it is AI's turn
+  if (gameMode === 'ai' && (aiThinking || turn !== playerColor)) return;
+
   const p = board[r][c];
   const pColor = pieceColor(p);
 
@@ -646,19 +701,41 @@ function doMove(from, to) {
     setTimeout(()=>toast(`${winner}胜！${inChk?'将军！':'困毙！'}`, 4000),200);
   } else if (inChk) {
     toast('将军！');
+    // Schedule AI move if needed (even after check announcement)
+    if (gameMode === 'ai' && turn !== playerColor) scheduleAIMove();
+  } else {
+    // Schedule AI move if it's now AI's turn
+    if (gameMode === 'ai' && turn !== playerColor) scheduleAIMove();
   }
 }
 
-function undo() {
-  if (!history.length) return;
+function undoOnce() {
+  if (!history.length) return false;
   const state = history.pop();
-  future.push({board:board.map(r=>[...r]),turn,capturedRed:[...capturedRed],capturedBlack:[...capturedBlack]});
+  future.push({board:board.map(r=>[...r]),turn,capturedRed:[...capturedRed],capturedBlack:[...capturedBlack],
+    notation:state.notation||''});
   board = state.board; turn = state.turn;
   capturedRed = state.capturedRed; capturedBlack = state.capturedBlack;
   selected = null; legalMoves = [];
-  // Remove last move from history display
-  rebuildMoveList();
-  render(); updateUI();
+  return true;
+}
+
+function undo() {
+  // Cancel any pending AI move
+  if (aiThinking) {
+    aiMoveToken++;
+    aiThinking = false;
+    showAIThinking(false);
+    // If AI was thinking, player just moved — undo that player move
+    undoOnce();
+    rebuildMoveList(); render(); updateUI();
+    return;
+  }
+  if (!history.length) return;
+  // In AI mode, undo 2 moves (AI + player) so player can retry
+  const undoCount = (gameMode === 'ai' && history.length >= 2) ? 2 : 1;
+  for (let i = 0; i < undoCount; i++) undoOnce();
+  rebuildMoveList(); render(); updateUI();
 }
 
 function redo() {
@@ -672,6 +749,265 @@ function redo() {
   rebuildMoveList();
   render(); updateUI();
 }
+
+// ═══════════════════════════════════════════════════════════
+// AI ENGINE
+// ═══════════════════════════════════════════════════════════
+
+// Base piece values
+const PIECE_VAL = { K:10000, A:120, B:120, N:400, R:900, C:450, P:70 };
+
+// Positional tables (rows 0-9, cols 0-8) from Red's perspective
+// Row 0 = Black's home, Row 9 = Red's home
+const POS = {
+  K: [
+    [0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0],
+    [0,0,0,10,5,10,0,0,0],
+    [0,0,0,10,12,10,0,0,0],
+    [0,0,0,5,8,5,0,0,0],
+  ],
+  A: [
+    [0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0],
+    [0,0,0,20,0,20,0,0,0],
+    [0,0,0,0,23,0,0,0,0],
+    [0,0,0,20,0,20,0,0,0],
+  ],
+  B: [
+    [0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0],
+    [0,0,20,0,0,0,20,0,0],
+    [0,0,0,0,0,0,0,0,0],
+    [20,0,0,0,20,0,0,0,20],
+    [0,0,0,0,0,0,0,0,0],
+    [0,0,20,0,0,0,20,0,0],
+  ],
+  N: [
+    [4,8,16,12,4,12,16,8,4],
+    [4,10,28,16,8,16,28,10,4],
+    [12,14,16,20,18,20,16,14,12],
+    [8,26,30,26,28,26,30,26,8],
+    [6,22,26,26,28,26,26,22,6],
+    [4,12,18,22,24,22,18,12,4],
+    [4,6,16,14,12,14,16,6,4],
+    [0,4,10,10,2,10,10,4,0],
+    [0,2,4,4,-2,4,4,2,0],
+    [0,-4,0,0,0,0,0,-4,0],
+  ],
+  R: [
+    [14,14,12,18,16,18,12,14,14],
+    [16,20,18,24,26,24,18,20,16],
+    [12,12,12,18,18,18,12,12,12],
+    [12,18,16,22,22,22,16,18,12],
+    [12,14,12,18,18,18,12,14,12],
+    [12,16,14,20,20,20,14,16,12],
+    [6,6,6,14,14,14,6,6,6],
+    [6,10,8,14,14,14,8,10,6],
+    [8,10,10,12,12,12,10,10,8],
+    [6,10,8,14,0,14,8,10,6],
+  ],
+  C: [
+    [6,4,0,14,0,14,0,4,6],
+    [8,6,4,16,6,16,4,6,8],
+    [6,0,2,10,6,10,2,0,6],
+    [4,0,0,6,10,6,0,0,4],
+    [2,0,4,0,12,0,4,0,2],
+    [2,2,2,0,14,0,2,2,2],
+    [0,0,2,2,14,2,2,0,0],
+    [4,0,0,2,14,2,0,0,4],
+    [8,6,4,6,16,6,4,6,8],
+    [0,0,2,6,0,6,2,0,0],
+  ],
+  P: [
+    [0,3,6,9,12,9,6,3,0],
+    [18,36,56,80,120,80,56,36,18],
+    [14,26,42,60,80,60,42,26,14],
+    [10,20,30,34,40,34,30,20,10],
+    [2,4,8,14,16,14,8,4,2],
+    [0,0,0,0,0,0,0,0,0],   // before crossing river
+    [2,0,8,0,8,0,8,0,2],
+    [0,0,0,0,8,0,0,0,0],
+    [0,0,0,0,10,0,0,0,0],
+    [0,0,0,2,10,2,0,0,0],
+  ],
+};
+
+function posScore(p, r, c) {
+  const type = p.toUpperCase();
+  const tbl = POS[type];
+  if (!tbl) return 0;
+  // Red: use table as-is; Black: mirror rows
+  const row = isRed(p) ? r : (9 - r);
+  return tbl[row][c];
+}
+
+function evaluate(b) {
+  // Returns score from Red's perspective (positive = Red better)
+  let score = 0;
+  for (let r = 0; r < 10; r++) {
+    for (let c = 0; c < 9; c++) {
+      const p = b[r][c];
+      if (!p) continue;
+      const val = PIECE_VAL[p.toUpperCase()] + posScore(p, r, c);
+      score += isRed(p) ? val : -val;
+    }
+  }
+  return score;
+}
+
+function getAllLegalMoves(b, color) {
+  const moves = [];
+  for (let r = 0; r < 10; r++) {
+    for (let c = 0; c < 9; c++) {
+      if (pieceColor(b[r][c]) !== color) continue;
+      const from = {row:r, col:c};
+      for (const to of legalMovesFor(b, r, c)) {
+        moves.push({from, to});
+      }
+    }
+  }
+  // Order: captures first (improves pruning)
+  moves.sort((a, mv) => (b[mv.to.row][mv.to.col] ? 1 : 0) - (b[a.to.row][a.to.col] ? 1 : 0));
+  return moves;
+}
+
+function alphaBeta(b, depth, alpha, beta, isMaximizing) {
+  if (depth === 0) return evaluate(b);
+  const color = isMaximizing ? RED : BLACK;
+  const moves = getAllLegalMoves(b, color);
+  if (moves.length === 0) return isMaximizing ? -9000 : 9000;
+
+  if (isMaximizing) {
+    let best = -Infinity;
+    for (const {from, to} of moves) {
+      const nb = applyMove(b, from, to);
+      best = Math.max(best, alphaBeta(nb, depth-1, alpha, beta, false));
+      alpha = Math.max(alpha, best);
+      if (beta <= alpha) break;
+    }
+    return best;
+  } else {
+    let best = Infinity;
+    for (const {from, to} of moves) {
+      const nb = applyMove(b, from, to);
+      best = Math.min(best, alphaBeta(nb, depth-1, alpha, beta, true));
+      beta = Math.min(beta, best);
+      if (beta <= alpha) break;
+    }
+    return best;
+  }
+}
+
+function getBestMove(b, color, depth) {
+  const moves = getAllLegalMoves(b, color);
+  if (moves.length === 0) return null;
+  const isMax = color === RED;
+  let best = isMax ? -Infinity : Infinity;
+  let bestMove = moves[0]; // fallback
+
+  for (const move of moves) {
+    const nb = applyMove(b, move.from, move.to);
+    const val = alphaBeta(nb, depth - 1, -Infinity, Infinity, !isMax);
+    if (isMax ? val > best : val < best) {
+      best = val;
+      bestMove = move;
+    }
+  }
+  return bestMove;
+}
+
+function showAIThinking(visible) {
+  document.getElementById('ai-thinking').classList.toggle('visible', visible);
+}
+
+function scheduleAIMove() {
+  if (aiThinking) return;
+  aiThinking = true;
+  showAIThinking(true);
+  const myToken = ++aiMoveToken;
+  const delays = [500, 1000, 1500];
+  const delay = delays[difficulty - 1] || 1000;
+
+  setTimeout(() => {
+    if (myToken !== aiMoveToken) return; // cancelled by undo
+    const aiColor = enemy(playerColor);
+    const move = getBestMove(board, aiColor, difficulty);
+    aiThinking = false;
+    showAIThinking(false);
+    if (move) {
+      doMove(move.from, move.to);
+    }
+  }, delay);
+}
+
+// ─── AI MODE UI HANDLERS ─────────────────────────────────────
+function setActiveBtn(group, active) {
+  group.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('active', el === active || el.id === active);
+  });
+}
+
+function cancelAI() {
+  aiMoveToken++;
+  aiThinking = false;
+  showAIThinking(false);
+}
+
+function applyAIModeSettings() {
+  // Cancel any pending AI move and start fresh
+  cancelAI();
+  newGame();
+  // If AI moves first (player chose Black), schedule AI move
+  if (gameMode === 'ai' && playerColor === BLACK) {
+    scheduleAIMove();
+  }
+}
+
+document.getElementById('btn-mode-pvp').addEventListener('click', () => {
+  gameMode = 'pvp';
+  setActiveBtn(['btn-mode-pvp','btn-mode-ai'], 'btn-mode-pvp');
+  document.getElementById('ai-sub-options').style.display = 'none';
+  cancelAI();
+  newGame();
+});
+
+document.getElementById('btn-mode-ai').addEventListener('click', () => {
+  gameMode = 'ai';
+  setActiveBtn(['btn-mode-pvp','btn-mode-ai'], 'btn-mode-ai');
+  document.getElementById('ai-sub-options').style.display = 'block';
+  applyAIModeSettings();
+});
+
+document.getElementById('btn-color-red').addEventListener('click', () => {
+  playerColor = RED;
+  setActiveBtn(['btn-color-red','btn-color-black'], 'btn-color-red');
+  if (gameMode === 'ai') applyAIModeSettings();
+});
+
+document.getElementById('btn-color-black').addEventListener('click', () => {
+  playerColor = BLACK;
+  setActiveBtn(['btn-color-red','btn-color-black'], 'btn-color-black');
+  if (gameMode === 'ai') applyAIModeSettings();
+});
+
+document.getElementById('btn-diff-easy').addEventListener('click', () => {
+  difficulty = 1;
+  setActiveBtn(['btn-diff-easy','btn-diff-medium','btn-diff-hard'], 'btn-diff-easy');
+});
+
+document.getElementById('btn-diff-medium').addEventListener('click', () => {
+  difficulty = 2;
+  setActiveBtn(['btn-diff-easy','btn-diff-medium','btn-diff-hard'], 'btn-diff-medium');
+});
+
+document.getElementById('btn-diff-hard').addEventListener('click', () => {
+  difficulty = 3;
+  setActiveBtn(['btn-diff-easy','btn-diff-medium','btn-diff-hard'], 'btn-diff-hard');
+});
 
 // ═══════════════════════════════════════════════════════════
 // RENDERING
@@ -994,6 +1330,7 @@ document.getElementById('btn-new').addEventListener('click', ()=>{
   }
   newGame();
   toast('新局已开始');
+  if (gameMode === 'ai' && playerColor === BLACK) scheduleAIMove();
 });
 document.getElementById('btn-undo').addEventListener('click', undo);
 document.getElementById('btn-redo').addEventListener('click', redo);
@@ -1038,6 +1375,7 @@ document.getElementById('file-input').addEventListener('change', e=>{
 });
 
 function loadPosition(text) {
+  cancelAI();
   text = text.trim();
   try {
     // Try JSON
@@ -1049,6 +1387,7 @@ function loadPosition(text) {
       selected=null; legalMoves=[];
       rebuildMoveList(); render(); updateUI();
       toast('局面加载成功');
+      if (gameMode === 'ai' && turn !== playerColor) scheduleAIMove();
       return;
     }
     if (obj.fen) { text = obj.fen; } // fall through
@@ -1062,6 +1401,7 @@ function loadPosition(text) {
     document.getElementById('move-list').innerHTML='';
     render(); updateUI();
     toast('FEN 加载成功');
+    if (gameMode === 'ai' && turn !== playerColor) scheduleAIMove();
   } catch(e) { toast('格式错误：' + e.message); }
 }
 
