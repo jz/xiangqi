@@ -747,6 +747,8 @@ function undo() {
   const undoCount = (gameMode === 'ai' && history.length >= 2) ? 2 : 1;
   for (let i = 0; i < undoCount; i++) undoOnce();
   rebuildMoveList(); render(); updateUI();
+  // If after undo it's AI's turn, schedule AI move
+  if (gameMode === 'ai' && turn !== playerColor) scheduleAIMove();
 }
 
 function redo() {
@@ -759,6 +761,8 @@ function redo() {
   selected = null; legalMoves = [];
   rebuildMoveList();
   render(); updateUI();
+  // If after redo it's AI's turn, schedule AI move
+  if (gameMode === 'ai' && turn !== playerColor) scheduleAIMove();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1139,11 +1143,15 @@ function cancelAI() {
 }
 
 function applyAIModeSettings() {
-  // Cancel any pending AI move and start fresh
+  // Cancel any pending AI move
   cancelAI();
-  newGame();
-  // If AI moves first (player chose Black), schedule AI move
-  if (gameMode === 'ai' && playerColor === BLACK) {
+  // Preserve current board state — don't reset the game
+  selected = null;
+  legalMoves = [];
+  render();
+  updateUI();
+  // Schedule AI move if it's the AI's turn based on current game state
+  if (gameMode === 'ai' && turn !== playerColor) {
     scheduleAIMove();
   }
 }
@@ -1153,7 +1161,10 @@ document.getElementById('btn-mode-pvp').addEventListener('click', () => {
   setActiveBtn(['btn-mode-pvp','btn-mode-ai'], 'btn-mode-pvp');
   document.getElementById('ai-sub-options').style.display = 'none';
   cancelAI();
-  newGame();
+  selected = null;
+  legalMoves = [];
+  render();
+  updateUI();
 });
 
 document.getElementById('btn-mode-ai').addEventListener('click', () => {
@@ -1525,7 +1536,7 @@ document.getElementById('btn-new').addEventListener('click', ()=>{
   }
   newGame();
   toast('新局已开始');
-  if (gameMode === 'ai' && playerColor === BLACK) scheduleAIMove();
+  if (gameMode === 'ai' && turn !== playerColor) scheduleAIMove();
 });
 document.getElementById('btn-undo').addEventListener('click', undo);
 document.getElementById('btn-redo').addEventListener('click', redo);
@@ -1557,6 +1568,7 @@ document.getElementById('btn-load-save').addEventListener('click', ()=>{
     selected=null; legalMoves=[];
     rebuildMoveList(); render(); updateUI();
     toast('读档成功');
+    if (gameMode === 'ai' && turn !== playerColor) scheduleAIMove();
   } catch(e) { toast('读档失败'); }
 });
 
