@@ -1142,9 +1142,32 @@ function applyAIModeSettings() {
   // Cancel any pending AI move and start fresh
   cancelAI();
   newGame();
-  // If AI moves first (player chose Black), schedule AI move
+  
+  // If AI moves first (player chose Black), schedule AI move immediately
+  // We need to block player input right away
   if (gameMode === 'ai' && playerColor === BLACK) {
-    scheduleAIMove();
+    // Block player input immediately and show thinking indicator
+    aiThinking = true;
+    showAIThinking(true);
+    
+    // Now directly call the AI engine (not through scheduleAIMove which would return early)
+    const myToken = ++aiMoveToken;
+    const aiColor = RED; // AI plays Red when player is Black
+    
+    // Use a tiny delay to let the UI update first
+    setTimeout(() => {
+      if (myToken !== aiMoveToken) {
+        aiThinking = false;
+        showAIThinking(false);
+        return;
+      }
+      
+      if (aiEngine === 'pikafish') {
+        schedulePikafishMove(myToken, aiColor);
+      } else {
+        scheduleLocalAIMove(myToken, aiColor);
+      }
+    }, 50);
   }
 }
 
