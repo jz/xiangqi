@@ -406,7 +406,7 @@ function boardToFEN(b, t) {
     if (empty) s += empty;
     rows.push(s);
   }
-  return rows.join('/') + ' ' + (t === BLACK ? 'b' : 'r');
+  return rows.join('/') + ' ' + (t === BLACK ? 'b' : 'w');
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1146,14 +1146,10 @@ function cancelAI() {
 }
 
 function applyAIModeSettings() {
-  // Cancel any pending AI move
+  // Cancel any pending AI move and start fresh
   cancelAI();
-  // Preserve current board state — don't reset the game
-  selected = null;
-  legalMoves = [];
-  render();
-  updateUI();
-  // Schedule AI move if it's the AI's turn based on current game state
+  newGame();
+  // If AI moves first, schedule AI move based on current turn
   if (gameMode === 'ai' && turn !== playerColor) {
     scheduleAIMove();
   }
@@ -1164,10 +1160,7 @@ document.getElementById('btn-mode-pvp').addEventListener('click', () => {
   setActiveBtn(['btn-mode-pvp','btn-mode-ai'], 'btn-mode-pvp');
   document.getElementById('ai-sub-options').style.display = 'none';
   cancelAI();
-  selected = null;
-  legalMoves = [];
-  render();
-  updateUI();
+  newGame();
 });
 
 document.getElementById('btn-mode-ai').addEventListener('click', () => {
