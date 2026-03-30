@@ -1122,21 +1122,6 @@ function parsePikafishMove(moveStr) {
     to: { row: toRow, col: toCol }
   };
 }
-    if (myToken !== aiMoveToken) return;
-    aiThinking = false;
-    showAIThinking(false);
-    const move = e.data;
-    if (move) doMove(move.from, move.to);
-  };
-  aiWorker.onerror = function(err) {
-    console.error('AI worker error:', err);
-    aiWorker = null;
-    aiThinking = false;
-    showAIThinking(false);
-  };
-
-  aiWorker.postMessage({ board, color: aiColor, maxDepth, timeLimit });
-}
 
 // ─── AI MODE UI HANDLERS ─────────────────────────────────────
 function setActiveBtn(group, active) {
