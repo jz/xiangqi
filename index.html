@@ -1026,11 +1026,14 @@ function showAIThinking(visible) {
 
 function scheduleAIMove() {
   if (aiThinking) return;
+  // Safety: don't move if it's the human player's turn
+  if (turn === playerColor) return;
   aiThinking = true;
   showAIThinking(true);
   const myToken = ++aiMoveToken;
 
-  const aiColor  = enemy(playerColor);
+  // AI plays whoever's turn it currently is (not based on playerColor)
+  const aiColor  = turn;
 
   if (aiEngine === 'pikafish') {
     // Use Pikafish API
