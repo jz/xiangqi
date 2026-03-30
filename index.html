@@ -1032,8 +1032,8 @@ function scheduleAIMove() {
   showAIThinking(true);
   const myToken = ++aiMoveToken;
 
-  // AI plays whoever's turn it currently is (not based on playerColor)
-  const aiColor  = turn;
+  // AI always plays the ENEMY of the player's color
+  const aiColor = enemy(playerColor);
 
   if (aiEngine === 'pikafish') {
     // Use Pikafish API
