@@ -314,6 +314,7 @@ label.btn-like:hover { background: rgba(212,168,67,0.3); border-color: #d4a843; 
         <button id="btn-copy-fen">复制 FEN</button>
         <button id="btn-save">存档</button>
         <button id="btn-load-save">读档</button>
+        <button id="btn-clear-save" title="清除自动存档">清除</button>
       </div>
     </div>
   </div>
@@ -645,6 +646,9 @@ function newGame() {
   document.getElementById('move-list').innerHTML = '';
   render();
   updateUI();
+  // Clear autosave when starting fresh
+  localStorage.removeItem('xiangqi_autosave');
+  localStorage.setItem('xiangqi_fen', boardToFEN(board, turn));
 }
 
 function selectCell(r, c) {
@@ -699,6 +703,7 @@ function doMove(from, to) {
 
   render();
   updateUI();
+  autoSave(); // Auto-save after each move
   addMoveToHistory(notation, enemy(turn));
 
   // Check game over
@@ -736,14 +741,14 @@ function undo() {
     showAIThinking(false);
     // If AI was thinking, player just moved — undo that player move
     undoOnce();
-    rebuildMoveList(); render(); updateUI();
+    rebuildMoveList(); render(); updateUI(); autoSave();
     return;
   }
   if (!history.length) return;
   // In AI mode, undo 2 moves (AI + player) so player can retry
   const undoCount = (gameMode === 'ai' && history.length >= 2) ? 2 : 1;
   for (let i = 0; i < undoCount; i++) undoOnce();
-  rebuildMoveList(); render(); updateUI();
+  rebuildMoveList(); render(); updateUI(); autoSave();
 }
 
 function redo() {
@@ -755,7 +760,7 @@ function redo() {
   capturedRed = state.capturedRed; capturedBlack = state.capturedBlack;
   selected = null; legalMoves = [];
   rebuildMoveList();
-  render(); updateUI();
+  render(); updateUI(); autoSave();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1532,10 +1537,66 @@ document.getElementById('btn-copy-fen').addEventListener('click', ()=>{
 });
 
 document.getElementById('btn-save').addEventListener('click', ()=>{
-  const state = {board, turn, history, future, capturedRed, capturedBlack};
+  const state = {board, turn, history, future, capturedRed, capturedBlack, gameMode, playerColor, aiEngine};
   localStorage.setItem('xiangqi_save', JSON.stringify(state));
+  // Also save FEN for easy import
+  localStorage.setItem('xiangqi_fen', boardToFEN(board, turn));
   toast('存档成功');
 });
+
+// Auto-save after every move
+function autoSave() {
+  const state = {board, turn, history, future, capturedRed, capturedBlack, gameMode, playerColor, aiEngine};
+  localStorage.setItem('xiangqi_autosave', JSON.stringify(state));
+  localStorage.setItem('xiangqi_fen', boardToFEN(board, turn));
+}
+
+// Try to resume game on page load
+function tryResumeGame() {
+  const raw = localStorage.getItem('xiangqi_autosave');
+  if (!raw) return false;
+  try {
+    const state = JSON.parse(raw);
+    // Check if it's a valid game in progress
+    if (!state.board || state.history.length === 0) return false;
+    
+    board = state.board;
+    turn = state.turn;
+    history = state.history || [];
+    future = state.future || [];
+    capturedRed = state.capturedRed || [];
+    capturedBlack = state.capturedBlack || [];
+    if (state.gameMode) gameMode = state.gameMode;
+    if (state.playerColor) playerColor = state.playerColor;
+    if (state.aiEngine) aiEngine = state.aiEngine;
+    selected = null; legalMoves = [];
+    
+    rebuildMoveList();
+    render();
+    updateUI();
+    
+    // Update mode buttons
+    document.getElementById('btn-mode-pvp').classList.toggle('active', gameMode === 'pvp');
+    document.getElementById('btn-mode-ai').classList.toggle('active', gameMode === 'ai');
+    document.getElementById('btn-color-red').classList.toggle('active', playerColor === RED);
+    document.getElementById('btn-color-black').classList.toggle('active', playerColor === BLACK);
+    document.getElementById('btn-ai-local').classList.toggle('active', aiEngine === 'local');
+    document.getElementById('btn-ai-pikafish').classList.toggle('active', aiEngine === 'pikafish');
+    
+    // Show resume toast
+    setTimeout(() => toast(`已恢复对局（${history.length}步）`, 3000), 500);
+    
+    // If AI's turn, schedule AI move
+    if (gameMode === 'ai' && turn !== playerColor) {
+      setTimeout(() => scheduleAIMove(), 1000);
+    }
+    
+    return true;
+  } catch(e) {
+    console.error('Resume failed:', e);
+    return false;
+  }
+}
 
 document.getElementById('btn-load-save').addEventListener('click', ()=>{
   const raw = localStorage.getItem('xiangqi_save');
@@ -1549,6 +1610,12 @@ document.getElementById('btn-load-save').addEventListener('click', ()=>{
     rebuildMoveList(); render(); updateUI();
     toast('读档成功');
   } catch(e) { toast('读档失败'); }
+});
+
+document.getElementById('btn-clear-save').addEventListener('click', ()=>{
+  localStorage.removeItem('xiangqi_autosave');
+  localStorage.removeItem('xiangqi_fen');
+  toast('已清除自动存档');
 });
 
 document.getElementById('file-input').addEventListener('change', e=>{
@@ -1606,7 +1673,10 @@ function toast(msg, dur=2000) {
 // ═══════════════════════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════════════════════
-newGame();
+// Try to resume previous game, otherwise start new
+if (!tryResumeGame()) {
+  newGame();
+}
 </script>
 </body>
 </html>
