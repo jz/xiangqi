@@ -230,7 +230,21 @@ label.btn-like:hover { background: rgba(212,168,67,0.3); border-color: #d4a843; 
 #ai-thinking.visible { display:block; animation:pulse 1s infinite; }
 </style>
 </head>
+<style>
+nav{width:100%;max-width:1100px;margin-bottom:12px;display:flex;align-items:center;gap:10px;font-size:.88rem;}
+nav a{color:#d4a843;text-decoration:none;opacity:.7;transition:opacity .2s;}
+nav a:hover{opacity:1;}
+nav a.active{opacity:1;font-weight:bold;}
+nav span{color:#555;}
+</style>
 <body>
+<nav>
+  <a href="/">首页</a>
+  <span>›</span>
+  <a href="/xiangqi/" class="active">象棋</a>
+  <span>›</span>
+  <a href="/gomoku/">五子棋</a>
+</nav>
 <h1>象 棋</h1>
 <div id="app">
   <div id="board-container">
