@@ -230,7 +230,21 @@ label.btn-like:hover { background: rgba(212,168,67,0.3); border-color: #d4a843; 
 #ai-thinking.visible { display:block; animation:pulse 1s infinite; }
 </style>
 </head>
+<style>
+nav{width:100%;max-width:1100px;margin-bottom:12px;display:flex;align-items:center;gap:10px;font-size:.88rem;}
+nav a{color:#d4a843;text-decoration:none;opacity:.7;transition:opacity .2s;}
+nav a:hover{opacity:1;}
+nav a.active{opacity:1;font-weight:bold;}
+nav span{color:#555;}
+</style>
 <body>
+<nav>
+  <a href="/">首页</a>
+  <span>›</span>
+  <a href="/xiangqi/" class="active">象棋</a>
+  <span>›</span>
+  <a href="/gomoku/">五子棋</a>
+</nav>
 <h1>象 棋</h1>
 <div id="app">
   <div id="board-container">
@@ -265,9 +279,23 @@ label.btn-like:hover { background: rgba(212,168,67,0.3); border-color: #d4a843; 
         </div>
         <div class="sub-label">AI引擎</div>
         <div class="mode-btns">
-          <button class="mode-btn active" id="btn-engine-local">本地AI</button>
-          <button class="mode-btn" id="btn-engine-pikafish">Pikafish</button>
+          <button class="mode-btn" id="btn-engine-local">本地AI</button>
+          <button class="mode-btn active" id="btn-engine-pikafish">Pikafish</button>
         </div>
+        <div style="margin-top:8px;font-size:0.75rem;color:#aaa">
+          当前: <span id="current-engine">Pikafish</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Position -->
+    <div class="card">
+      <h3>局面导入</h3>
+      <textarea id="fen-input" placeholder="粘贴 FEN 或 JSON 局面字符串..."></textarea>
+      <div class="btn-row" style="margin-top:8px">
+        <button id="btn-load-fen">加载</button>
+        <label class="btn-like" for="file-input">上传文件</label>
+        <input type="file" id="file-input" accept=".json,.fen,.txt">
       </div>
     </div>
 
@@ -293,17 +321,6 @@ label.btn-like:hover { background: rgba(212,168,67,0.3); border-color: #d4a843; 
     <div class="card">
       <h3>走子记录</h3>
       <div id="move-list"></div>
-    </div>
-
-    <!-- Position -->
-    <div class="card">
-      <h3>局面导入</h3>
-      <textarea id="fen-input" placeholder="粘贴 FEN 或 JSON 局面字符串..."></textarea>
-      <div class="btn-row" style="margin-top:8px">
-        <button id="btn-load-fen">加载</button>
-        <label class="btn-like" for="file-input">上传文件</label>
-        <input type="file" id="file-input" accept=".json,.fen,.txt">
-      </div>
     </div>
 
     <!-- Export -->
@@ -363,9 +380,9 @@ let playerColor = RED;   // color the human plays in AI mode
 let difficulty  = 2;     // search depth: 1=easy, 2=medium, 3=hard
 let aiThinking  = false;
 let aiMoveToken = 0;     // increment to cancel pending AI move
-let aiEngine    = 'local'; // 'local' | 'pikafish'
+let aiEngine    = 'pikafish'; // 'local' | 'pikafish'
 
-const PIKAFISH_API = 'https://cc914af0aef28a18-73-63-238-103.serveousercontent.com';
+const PIKAFISH_API = 'https://pikafish-api-production.up.railway.app';
 
 // ═══════════════════════════════════════════════════════════
 // FEN PARSING
@@ -403,7 +420,7 @@ function boardToFEN(b, t) {
     if (empty) s += empty;
     rows.push(s);
   }
-  return rows.join('/') + ' ' + (t === BLACK ? 'b' : 'r');
+  return rows.join('/') + ' ' + (t === BLACK ? 'b' : 'w');
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -744,6 +761,8 @@ function undo() {
   const undoCount = (gameMode === 'ai' && history.length >= 2) ? 2 : 1;
   for (let i = 0; i < undoCount; i++) undoOnce();
   rebuildMoveList(); render(); updateUI();
+  // If after undo it's AI's turn, schedule AI move
+  if (gameMode === 'ai' && turn !== playerColor) scheduleAIMove();
 }
 
 function redo() {
@@ -756,6 +775,8 @@ function redo() {
   selected = null; legalMoves = [];
   rebuildMoveList();
   render(); updateUI();
+  // If after redo it's AI's turn, schedule AI move
+  if (gameMode === 'ai' && turn !== playerColor) scheduleAIMove();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1019,11 +1040,25 @@ function showAIThinking(visible) {
 
 function scheduleAIMove() {
   if (aiThinking) return;
+  // Safety: don't move if it's the human player's turn
+  if (turn === playerColor) return;
   aiThinking = true;
   showAIThinking(true);
   const myToken = ++aiMoveToken;
 
-  const aiColor  = enemy(playerColor);
+  // AI always plays the ENEMY of the player's color
+  const aiColor = enemy(playerColor);
+
+  if (aiEngine === 'pikafish') {
+    // Use Pikafish API
+    schedulePikafishMove(myToken, aiColor);
+  } else {
+    // Use local AI
+    scheduleLocalAIMove(myToken, aiColor);
+  }
+}
+
+function scheduleLocalAIMove(myToken, aiColor) {
   const depths   = [2, 3, 5];
   const times    = [1000, 2000, 4000];
   const maxDepth = depths[difficulty - 1] || 3;
@@ -1050,6 +1085,65 @@ function scheduleAIMove() {
   aiWorker.postMessage({ board, color: aiColor, maxDepth, timeLimit });
 }
 
+async function schedulePikafishMove(myToken, aiColor) {
+  try {
+    const fen = boardToFEN(board, turn);
+    const depths = [10, 15, 20];
+    const times = [500, 1000, 2000];
+    const depth = depths[difficulty - 1] || 15;
+    const movetime = times[difficulty - 1] || 1000;
+
+    const response = await fetch(`${PIKAFISH_API}/bestmove`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fen, depth, movetime })
+    });
+
+    if (myToken !== aiMoveToken) return;
+
+    if (!response.ok) {
+      throw new Error(`Pikafish API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    if (data.bestMove) {
+      const move = parsePikafishMove(data.bestMove);
+      if (move) {
+        doMove(move.from, move.to);
+      }
+    }
+  } catch (error) {
+    console.error('Pikafish API error:', error);
+    toast('Pikafish API 连接失败，切换到本地AI');
+    // Fallback to local AI
+    if (myToken === aiMoveToken) {
+      scheduleLocalAIMove(myToken, aiColor);
+    }
+    return;
+  }
+  
+  aiThinking = false;
+  showAIThinking(false);
+}
+
+function parsePikafishMove(moveStr) {
+  // Pikafish format: "b2e2" (from b2 to e2)
+  // Convert to {from: {row, col}, to: {row, col}}
+  const cols = 'abcdefghi';
+  const fromCol = cols.indexOf(moveStr[0]);
+  const fromRow = 9 - parseInt(moveStr[1]);
+  const toCol = cols.indexOf(moveStr[2]);
+  const toRow = 9 - parseInt(moveStr[3]);
+  
+  if (fromCol < 0 || toCol < 0) return null;
+  
+  return {
+    from: { row: fromRow, col: fromCol },
+    to: { row: toRow, col: toCol }
+  };
+}
+
 // ─── AI MODE UI HANDLERS ─────────────────────────────────────
 function setActiveBtn(group, active) {
   group.forEach(id => {
@@ -1069,8 +1163,8 @@ function applyAIModeSettings() {
   // Cancel any pending AI move and start fresh
   cancelAI();
   newGame();
-  // If AI moves first (player chose Black), schedule AI move
-  if (gameMode === 'ai' && playerColor === BLACK) {
+  // If AI moves first, schedule AI move based on current turn
+  if (gameMode === 'ai' && turn !== playerColor) {
     scheduleAIMove();
   }
 }
@@ -1115,6 +1209,20 @@ document.getElementById('btn-diff-medium').addEventListener('click', () => {
 document.getElementById('btn-diff-hard').addEventListener('click', () => {
   difficulty = 3;
   setActiveBtn(['btn-diff-easy','btn-diff-medium','btn-diff-hard'], 'btn-diff-hard');
+});
+
+document.getElementById('btn-engine-local').addEventListener('click', () => {
+  aiEngine = 'local';
+  setActiveBtn(['btn-engine-local','btn-engine-pikafish'], 'btn-engine-local');
+  document.getElementById('current-engine').textContent = '本地AI';
+  toast('切换到本地AI引擎');
+});
+
+document.getElementById('btn-engine-pikafish').addEventListener('click', () => {
+  aiEngine = 'pikafish';
+  setActiveBtn(['btn-engine-local','btn-engine-pikafish'], 'btn-engine-pikafish');
+  document.getElementById('current-engine').textContent = 'Pikafish';
+  toast('切换到Pikafish引擎（需要网络）')
 });
 
 // ═══════════════════════════════════════════════════════════
@@ -1438,7 +1546,7 @@ document.getElementById('btn-new').addEventListener('click', ()=>{
   }
   newGame();
   toast('新局已开始');
-  if (gameMode === 'ai' && playerColor === BLACK) scheduleAIMove();
+  if (gameMode === 'ai' && turn !== playerColor) scheduleAIMove();
 });
 document.getElementById('btn-undo').addEventListener('click', undo);
 document.getElementById('btn-redo').addEventListener('click', redo);
@@ -1470,6 +1578,7 @@ document.getElementById('btn-load-save').addEventListener('click', ()=>{
     selected=null; legalMoves=[];
     rebuildMoveList(); render(); updateUI();
     toast('读档成功');
+    if (gameMode === 'ai' && turn !== playerColor) scheduleAIMove();
   } catch(e) { toast('读档失败'); }
 });
 
