@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>棋类游戏</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #1a1a2e;
+      color: #eee;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      gap: 32px;
+    }
+    h1 { font-size: 2.2rem; color: #f0c040; letter-spacing: 3px; }
+    .games {
+      display: flex;
+      gap: 32px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    a.card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      background: #16213e;
+      border: 2px solid #333;
+      border-radius: 16px;
+      padding: 36px 48px;
+      text-decoration: none;
+      color: #eee;
+      transition: border-color 0.2s, transform 0.15s;
+    }
+    a.card:hover { border-color: #f0c040; transform: translateY(-4px); }
+    .icon { font-size: 3.5rem; }
+    .name { font-size: 1.4rem; font-weight: bold; }
+    .desc { font-size: 0.85rem; color: #888; }
+  </style>
+</head>
+<body>
+  <h1>棋类游戏</h1>
+  <div class="games">
+    <a class="card" href="index.html">
+      <div class="icon">♟️</div>
+      <div class="name">象棋</div>
+      <div class="desc">Chinese Chess · 人机对弈</div>
+    </a>
+    <a class="card" href="connect4.html">
+      <div class="icon">🔴</div>
+      <div class="name">四子棋</div>
+      <div class="desc">Connect 4 · 人机对弈</div>
+    </a>
+  </div>
+</body>
+</html>

@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>四子棋 — Connect 4</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #1a1a2e;
+      color: #eee;
+      font-family: 'Segoe UI', Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: 24px 16px;
+    }
+    h1 { font-size: 2rem; color: #f0c040; letter-spacing: 2px; }
+    #subtitle { color: #888; font-size: 0.9rem; margin: 4px 0 18px; }
+    #controls {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: center;
+    }
+    label { font-size: 0.9rem; color: #ccc; display: flex; align-items: center; gap: 6px; }
+    select {
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid #444;
+      background: #16213e;
+      color: #eee;
+      font-size: 0.9rem;
+      cursor: pointer;
+    }
+    #newGameBtn {
+      padding: 8px 22px;
+      border-radius: 6px;
+      border: none;
+      background: #f0c040;
+      color: #1a1a2e;
+      font-weight: bold;
+      font-size: 0.95rem;
+      cursor: pointer;
+    }
+    #newGameBtn:hover { background: #ffd060; }
+    #status {
+      font-size: 1.2rem;
+      font-weight: bold;
+      min-height: 2em;
+      margin-bottom: 10px;
+      text-align: center;
+    }
+    #status.human  { color: #ff6b6b; }
+    #status.ai     { color: #4dabf7; }
+    #status.win    { color: #69db7c; font-size: 1.4rem; }
+    #status.draw   { color: #ffd43b; }
+    canvas { display: block; cursor: pointer; border-radius: 10px; }
+    #legend {
+      display: flex;
+      gap: 28px;
+      margin-top: 12px;
+    }
+    .leg {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.9rem;
+      color: #ccc;
+    }
+    .dot {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.4);
+    }
+  </style>
+</head>
+<body>
+  <h1>四子棋</h1>
+  <p id="subtitle">Connect 4 — 先连成四子者赢</p>
+
+  <div id="controls">
+    <label>难度:
+      <select id="diffSel">
+        <option value="easy">简单</option>
+        <option value="medium" selected>中等</option>
+        <option value="hard">困难</option>
+      </select>
+    </label>
+    <label>执子:
+      <select id="colorSel">
+        <option value="1">红方（先手）</option>
+        <option value="2">蓝方（后手）</option>
+      </select>
+    </label>
+    <button id="newGameBtn">新游戏</button>
+  </div>
+
+  <div id="status" class="human">轮到你了</div>
+  <canvas id="board"></canvas>
+  <div id="legend">
+    <div class="leg">
+      <div class="dot" style="background:#ff6b6b"></div>
+      <span id="p1label">红方（先手）</span>
+    </div>
+    <div class="leg">
+      <div class="dot" style="background:#4dabf7"></div>
+      <span id="p2label">蓝方（后手）</span>
+    </div>
+  </div>
+
+  <script>
+    // ─── Constants ───────────────────────────────────────────────────────────
+    const ROWS = 6, COLS = 7;
+    const CELL = 80, PAD = 20;
+    const CW = COLS * CELL + PAD * 2;
+    const CH = ROWS * CELL + PAD * 2 + CELL; // extra top row for preview
+
+    const EMPTY = 0, P1 = 1, P2 = 2;
+    const PIECE_COLOR = { [P1]: '#ff6b6b', [P2]: '#4dabf7' };
+    const DEPTHS = { easy: 3, medium: 5, hard: 8 };
+    // column trial order: center-outward
+    const COL_ORDER = [3, 2, 4, 1, 5, 0, 6];
+
+    // ─── Canvas setup ────────────────────────────────────────────────────────
+    const canvas = document.getElementById('board');
+    const ctx = canvas.getContext('2d');
+    canvas.width = CW;
+    canvas.height = CH;
+
+    // ─── Game state ──────────────────────────────────────────────────────────
+    let board;        // board[row][col]: EMPTY|P1|P2
+    let turn;         // P1|P2
+    let humanPiece;   // which piece the human plays
+    let aiPiece;
+    let gameOver;
+    let winCells;     // [[r,c], ...] or null
+    let hoverCol = -1;
+    let animPiece = null; // { col, piece, y, targetY, row }
+    let aiWorker = null;
+
+    // ─── AI Web Worker (embedded) ────────────────────────────────────────────
+    const WORKER_SRC = `
+      const ROWS=6, COLS=7, EMPTY=0, P1=1, P2=2;
+      const COL_ORDER=[3,2,4,1,5,0,6];
+      const WIN=1000000;
+
+      function validCols(b) {
+        return COL_ORDER.filter(c => b[0][c]===EMPTY);
+      }
+      function drop(b, col, piece) {
+        const nb = b.map(r=>[...r]);
+        for (let r=ROWS-1; r>=0; r--) {
+          if (nb[r][col]===EMPTY) { nb[r][col]=piece; return nb; }
+        }
+        return null;
+      }
+      function checkWin(b, p) {
+        for (let r=0;r<ROWS;r++)
+          for (let c=0;c<=COLS-4;c++)
+            if (b[r][c]===p&&b[r][c+1]===p&&b[r][c+2]===p&&b[r][c+3]===p) return true;
+        for (let r=0;r<=ROWS-4;r++)
+          for (let c=0;c<COLS;c++)
+            if (b[r][c]===p&&b[r+1][c]===p&&b[r+2][c]===p&&b[r+3][c]===p) return true;
+        for (let r=0;r<=ROWS-4;r++)
+          for (let c=0;c<=COLS-4;c++)
+            if (b[r][c]===p&&b[r+1][c+1]===p&&b[r+2][c+2]===p&&b[r+3][c+3]===p) return true;
+        for (let r=0;r<=ROWS-4;r++)
+          for (let c=3;c<COLS;c++)
+            if (b[r][c]===p&&b[r+1][c-1]===p&&b[r+2][c-2]===p&&b[r+3][c-3]===p) return true;
+        return false;
+      }
+      function full(b) { return b[0].every(c=>c!==EMPTY); }
+
+      function scoreWindow(w, p, opp) {
+        const mine=w.filter(x=>x===p).length;
+        const op=w.filter(x=>x===opp).length;
+        const em=w.filter(x=>x===EMPTY).length;
+        if (mine===4) return 10000;
+        if (op===4) return -10000;
+        if (mine===3 && em===1) return 50;
+        if (mine===2 && em===2) return 4;
+        if (op===3 && em===1) return -80;
+        if (op===2 && em===2) return -3;
+        return 0;
+      }
+      function evaluate(b, aiP, humP) {
+        let s=0;
+        // centre column bonus
+        for (let r=0;r<ROWS;r++) { if(b[r][3]===aiP) s+=3; if(b[r][3]===humP) s-=3; }
+        // horizontal
+        for (let r=0;r<ROWS;r++)
+          for (let c=0;c<=COLS-4;c++)
+            s+=scoreWindow([b[r][c],b[r][c+1],b[r][c+2],b[r][c+3]],aiP,humP);
+        // vertical
+        for (let r=0;r<=ROWS-4;r++)
+          for (let c=0;c<COLS;c++)
+            s+=scoreWindow([b[r][c],b[r+1][c],b[r+2][c],b[r+3][c]],aiP,humP);
+        // diag DR
+        for (let r=0;r<=ROWS-4;r++)
+          for (let c=0;c<=COLS-4;c++)
+            s+=scoreWindow([b[r][c],b[r+1][c+1],b[r+2][c+2],b[r+3][c+3]],aiP,humP);
+        // diag DL
+        for (let r=0;r<=ROWS-4;r++)
+          for (let c=3;c<COLS;c++)
+            s+=scoreWindow([b[r][c],b[r+1][c-1],b[r+2][c-2],b[r+3][c-3]],aiP,humP);
+        return s;
+      }
+
+      function minimax(b, depth, alpha, beta, maxing, aiP, humP) {
+        if (checkWin(b,aiP)) return { s: WIN+depth, c:-1 };
+        if (checkWin(b,humP)) return { s: -(WIN+depth), c:-1 };
+        if (full(b)) return { s:0, c:-1 };
+        if (depth===0) return { s: evaluate(b,aiP,humP), c:-1 };
+
+        const cols=validCols(b);
+        let bestCol=cols[0], bestS=maxing?-Infinity:Infinity;
+
+        for (const col of cols) {
+          const nb=drop(b, col, maxing?aiP:humP);
+          if (!nb) continue;
+          const { s }=minimax(nb, depth-1, alpha, beta, !maxing, aiP, humP);
+          if (maxing) {
+            if (s>bestS) { bestS=s; bestCol=col; }
+            alpha=Math.max(alpha,bestS);
+          } else {
+            if (s<bestS) { bestS=s; bestCol=col; }
+            beta=Math.min(beta,bestS);
+          }
+          if (alpha>=beta) break;
+        }
+        return { s:bestS, c:bestCol };
+      }
+
+      self.onmessage = function(e) {
+        const { board, depth, aiPiece, humanPiece } = e.data;
+        const result = minimax(board, depth, -Infinity, Infinity, true, aiPiece, humanPiece);
+        self.postMessage({ col: result.c });
+      };
+    `;
+
+    function makeWorker() {
+      const blob = new Blob([WORKER_SRC], { type: 'application/javascript' });
+      const url = URL.createObjectURL(blob);
+      const w = new Worker(url);
+      URL.revokeObjectURL(url);
+      return w;
+    }
+
+    // ─── Board helpers ───────────────────────────────────────────────────────
+    function emptyBoard() {
+      return Array.from({ length: ROWS }, () => Array(COLS).fill(EMPTY));
+    }
+    function getDropRow(b, col) {
+      for (let r = ROWS - 1; r >= 0; r--) if (b[r][col] === EMPTY) return r;
+      return -1;
+    }
+    function checkWin4(b, p) {
+      for (let r = 0; r < ROWS; r++)
+        for (let c = 0; c <= COLS - 4; c++)
+          if ([0,1,2,3].every(i => b[r][c+i] === p))
+            return [[r,c],[r,c+1],[r,c+2],[r,c+3]];
+      for (let r = 0; r <= ROWS - 4; r++)
+        for (let c = 0; c < COLS; c++)
+          if ([0,1,2,3].every(i => b[r+i][c] === p))
+            return [[r,c],[r+1,c],[r+2,c],[r+3,c]];
+      for (let r = 0; r <= ROWS - 4; r++)
+        for (let c = 0; c <= COLS - 4; c++)
+          if ([0,1,2,3].every(i => b[r+i][c+i] === p))
+            return [[r,c],[r+1,c+1],[r+2,c+2],[r+3,c+3]];
+      for (let r = 0; r <= ROWS - 4; r++)
+        for (let c = 3; c < COLS; c++)
+          if ([0,1,2,3].every(i => b[r+i][c-i] === p))
+            return [[r,c],[r+1,c-1],[r+2,c-2],[r+3,c-3]];
+      return null;
+    }
+    function isFull(b) { return b[0].every(c => c !== EMPTY); }
+
+    // ─── New game ────────────────────────────────────────────────────────────
+    function newGame() {
+      board     = emptyBoard();
+      humanPiece = parseInt(document.getElementById('colorSel').value);
+      aiPiece   = humanPiece === P1 ? P2 : P1;
+      turn      = P1;
+      gameOver  = false;
+      winCells  = null;
+      animPiece = null;
+      hoverCol  = -1;
+
+      document.getElementById('p1label').textContent =
+        humanPiece === P1 ? '红方（你）' : '红方（AI）';
+      document.getElementById('p2label').textContent =
+        humanPiece === P2 ? '蓝方（你）' : '蓝方（AI）';
+
+      if (aiWorker) aiWorker.terminate();
+      aiWorker = makeWorker();
+      aiWorker.onmessage = onAIResult;
+
+      setStatus();
+      render();
+      if (turn === aiPiece) setTimeout(triggerAI, 400);
+    }
+
+    // ─── AI ──────────────────────────────────────────────────────────────────
+    function triggerAI() {
+      if (gameOver || turn !== aiPiece || animPiece) return;
+      const depth = DEPTHS[document.getElementById('diffSel').value];
+      aiWorker.postMessage({ board, depth, aiPiece, humanPiece });
+    }
+
+    function onAIResult(e) {
+      if (gameOver) return;
+      const col = e.data.col;
+      if (col < 0 || col >= COLS) return;
+      animateDrop(col, aiPiece);
+    }
+
+    // ─── Animation ───────────────────────────────────────────────────────────
+    function colX(c) { return PAD + c * CELL + CELL / 2; }
+    function rowY(r) { return PAD + CELL + r * CELL + CELL / 2; }
+
+    function animateDrop(col, piece) {
+      const row = getDropRow(board, col);
+      if (row < 0) return;
+      animPiece = { col, piece, y: PAD + CELL / 2, targetY: rowY(row), row };
+      requestAnimationFrame(animStep);
+    }
+
+    function animStep() {
+      if (!animPiece) return;
+      animPiece.y += CELL * 0.45;
+      if (animPiece.y >= animPiece.targetY) {
+        const { col, piece, row } = animPiece;
+        board[row][col] = piece;
+        animPiece = null;
+        onPieceLanded(piece);
+      } else {
+        render();
+        requestAnimationFrame(animStep);
+      }
+    }
+
+    function onPieceLanded(piece) {
+      const w = checkWin4(board, piece);
+      if (w) {
+        winCells = w;
+        gameOver = true;
+        setStatus(piece === humanPiece ? 'win' : 'lose');
+      } else if (isFull(board)) {
+        gameOver = true;
+        setStatus('draw');
+      } else {
+        turn = piece === P1 ? P2 : P1;
+        setStatus();
+        if (turn === aiPiece) setTimeout(triggerAI, 280);
+      }
+      render();
+    }
+
+    // ─── Status ──────────────────────────────────────────────────────────────
+    function setStatus(state) {
+      const el = document.getElementById('status');
+      if (state === 'win')  { el.textContent = '你赢了！🎉'; el.className = 'win'; }
+      else if (state === 'lose') { el.textContent = 'AI 赢了！'; el.className = 'ai'; }
+      else if (state === 'draw') { el.textContent = '平局！'; el.className = 'draw'; }
+      else if (turn === humanPiece) { el.textContent = '轮到你了'; el.className = 'human'; }
+      else { el.textContent = 'AI 思考中…'; el.className = 'ai'; }
+    }
+
+    // ─── Rendering ───────────────────────────────────────────────────────────
+    function roundRect(x, y, w, h, r) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+    }
+
+    function drawPiece(x, y, piece, alpha, gold) {
+      ctx.save();
+      ctx.globalAlpha = alpha ?? 1;
+      ctx.fillStyle = PIECE_COLOR[piece];
+      ctx.beginPath();
+      ctx.arc(x, y, CELL / 2 - 7, 0, Math.PI * 2);
+      ctx.fill();
+      // inner shine
+      ctx.fillStyle = 'rgba(255,255,255,0.25)';
+      ctx.beginPath();
+      ctx.arc(x - 9, y - 9, CELL / 5, 0, Math.PI * 2);
+      ctx.fill();
+      if (gold) {
+        ctx.strokeStyle = '#ffd700';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.arc(x, y, CELL / 2 - 5, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    function render() {
+      ctx.clearRect(0, 0, CW, CH);
+
+      // Background
+      ctx.fillStyle = '#1a1a2e';
+      ctx.fillRect(0, 0, CW, CH);
+
+      // Hover ghost (top preview row)
+      if (hoverCol >= 0 && !gameOver && !animPiece && turn === humanPiece) {
+        drawPiece(colX(hoverCol), PAD + CELL / 2, humanPiece, 0.4);
+      }
+
+      // Animating piece (above board)
+      if (animPiece) {
+        drawPiece(colX(animPiece.col), animPiece.y, animPiece.piece, 1);
+      }
+
+      // Column hover highlight
+      if (hoverCol >= 0 && !gameOver && !animPiece && turn === humanPiece) {
+        ctx.fillStyle = 'rgba(255,255,255,0.04)';
+        ctx.fillRect(PAD + hoverCol * CELL, PAD + CELL, CELL, ROWS * CELL);
+      }
+
+      // Board frame
+      ctx.fillStyle = '#0b3d91';
+      roundRect(PAD, PAD + CELL, COLS * CELL, ROWS * CELL, 14);
+      ctx.fill();
+
+      // Holes and pieces
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          const x = colX(c), y = rowY(r);
+          const piece = board[r][c];
+          const isWin = winCells && winCells.some(([wr, wc]) => wr === r && wc === c);
+
+          // empty hole
+          ctx.fillStyle = '#1a1a2e';
+          ctx.beginPath();
+          ctx.arc(x, y, CELL / 2 - 7, 0, Math.PI * 2);
+          ctx.fill();
+
+          if (piece !== EMPTY) drawPiece(x, y, piece, 1, isWin);
+        }
+      }
+    }
+
+    // ─── Input ───────────────────────────────────────────────────────────────
+    canvas.addEventListener('mousemove', e => {
+      const rect = canvas.getBoundingClientRect();
+      const col = Math.floor((e.clientX - rect.left - PAD) / CELL);
+      const newHover = (col >= 0 && col < COLS) ? col : -1;
+      if (newHover !== hoverCol) { hoverCol = newHover; if (!animPiece) render(); }
+    });
+
+    canvas.addEventListener('mouseleave', () => {
+      hoverCol = -1;
+      if (!animPiece) render();
+    });
+
+    canvas.addEventListener('click', e => {
+      if (gameOver || animPiece || turn !== humanPiece) return;
+      const rect = canvas.getBoundingClientRect();
+      const col = Math.floor((e.clientX - rect.left - PAD) / CELL);
+      if (col < 0 || col >= COLS || getDropRow(board, col) < 0) return;
+      animateDrop(col, humanPiece);
+    });
+
+    document.getElementById('newGameBtn').addEventListener('click', newGame);
+
+    // ─── Start ───────────────────────────────────────────────────────────────
+    newGame();
+  </script>
+</body>
+</html>
