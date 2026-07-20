@@ -334,6 +334,7 @@
     <span>3 lines</span><span>send 2 rows</span>
     <span>4 lines</span><span>send 4 rows</span>
     <span>pause</span><span>once each, 30s max</span>
+    <span>paused 10s+</span><span>either key resumes</span>
     <span><kbd>B</kbd></span><span>same blocks</span>
     <span><kbd>C</kbd></span><span>vs computer</span>
     <span><kbd>L</kbd></span><span>cpu level</span>
@@ -349,7 +350,8 @@
       their current piece locks. Watch the red Incoming meter.
       Each player can pause the match once per game &mdash; Q for
       Player 1, P for Player 2 &mdash; for up to 30 seconds; the same
-      key resumes. Turn on Same blocks (B) to give both players the
+      key resumes, and after 10 seconds the other player's pause key
+      can resume too. Turn on Same blocks (B) to give both players the
       identical piece sequence, or set Opponent (C) to Computer to
       play solo against the machine.
     </p>
@@ -378,6 +380,9 @@
   const GARBAGE_FOR_CLEAR = { 2: 1, 3: 2, 4: 4 };
   const SCORE_FOR_CLEAR = { 1: 100, 2: 300, 3: 500, 4: 800 };
   const PAUSE_LIMIT_MS = 30000;
+  // A pause is protected for its first 10 seconds; after that the other
+  // player may end it with their own pause key.
+  const PAUSE_PROTECTED_MS = 10000;
 
   function shuffledBag() {
     const bag = ["I", "O", "T", "S", "Z", "J", "L"];
@@ -916,6 +921,7 @@
   let lastTime = 0;
   let fightStatus = "";
   let pausedBy = 0;      // 1 or 2 while paused
+  let pauseStarted = 0;  // performance.now() when the pause began
   let pauseUntil = 0;    // performance.now() deadline for auto-resume
   let statusFlashTimer = 0;
 
@@ -953,7 +959,8 @@
     p.pauseUsed = true;
     p.updateHud();
     pausedBy = n;
-    pauseUntil = performance.now() + PAUSE_LIMIT_MS;
+    pauseStarted = performance.now();
+    pauseUntil = pauseStarted + PAUSE_LIMIT_MS;
     state = "paused";
     music.pause();
     const color = n === 1 ? "var(--p1)" : "var(--p2)";
@@ -962,7 +969,10 @@
       '<span style="color:' + color + '">' + name + " paused</span>";
     overlayText.textContent =
       "One pause per player per game, 30 seconds max. " +
-      "The game resumes automatically when time runs out.";
+      (vsComputer
+        ? "The game resumes automatically when time runs out."
+        : "After 10 seconds your opponent can resume with their own " +
+          "pause key; the game resumes automatically when time runs out.");
     overlay.classList.remove("hidden");
     statusEl.textContent = "Paused";
   }
@@ -1008,8 +1018,11 @@
         resumeGame();
       } else {
         const key = pausedBy === 1 ? "Q" : "P";
+        const otherKey = pausedBy === 1 ? "P" : "Q";
+        const open = !vsComputer && now - pauseStarted >= PAUSE_PROTECTED_MS;
         overlayHint.textContent =
-          "Resumes in " + Math.ceil(left / 1000) + "s — " + key + " to resume now";
+          "Resumes in " + Math.ceil(left / 1000) + "s — " +
+          (open ? key + " or " + otherKey : key) + " to resume now";
       }
     } else {
       lastTime = now;
@@ -1032,13 +1045,21 @@
     if (e.code === "KeyL" && !e.repeat && vsComputer) { cycleCpuLevel(); return; }
     if (state === "menu") { startGame(); return; }
     if (e.code === "KeyR" && !e.repeat) { startGame(); return; }
+    const pauseOpen = () =>
+      performance.now() - pauseStarted >= PAUSE_PROTECTED_MS;
     if (e.code === "KeyQ" && !e.repeat) {
       if (state === "playing") { pauseGame(1); return; }
-      if (state === "paused" && pausedBy === 1) { resumeGame(); return; }
+      if (state === "paused" && (pausedBy === 1 || pauseOpen())) {
+        resumeGame();
+        return;
+      }
     }
     if (e.code === "KeyP" && !e.repeat && !vsComputer) {
       if (state === "playing") { pauseGame(2); return; }
-      if (state === "paused" && pausedBy === 2) { resumeGame(); return; }
+      if (state === "paused" && (pausedBy === 2 || pauseOpen())) {
+        resumeGame();
+        return;
+      }
     }
     if (state !== "playing") return;
 
