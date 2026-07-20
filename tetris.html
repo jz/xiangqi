@@ -326,7 +326,7 @@
     <span><kbd>&uarr;</kbd></span><span>rotate</span>
     <span><kbd>&darr;</kbd></span><span>soft drop</span>
     <span><kbd>Enter</kbd></span><span>hard drop</span>
-    <span><kbd>P</kbd></span><span>pause</span>
+    <span><kbd>'</kbd></span><span>pause</span>
   </div>
   <div class="keys">
     <div class="keyset-title">Battle</div>
@@ -349,7 +349,7 @@
       1, 2, or 4 garbage rows to your opponent &mdash; they land when
       their current piece locks. Watch the red Incoming meter.
       Each player can pause the match once per game &mdash; Q for
-      Player 1, P for Player 2 &mdash; for up to 30 seconds; the same
+      Player 1, ' for Player 2 &mdash; for up to 30 seconds; the same
       key resumes, and after 10 seconds the other player's pause key
       can resume too. Turn on Same blocks (B) to give both players the
       identical piece sequence, or set Opponent (C) to Computer to
@@ -1017,8 +1017,8 @@
       if (left <= 0) {
         resumeGame();
       } else {
-        const key = pausedBy === 1 ? "Q" : "P";
-        const otherKey = pausedBy === 1 ? "P" : "Q";
+        const key = pausedBy === 1 ? "Q" : "'";
+        const otherKey = pausedBy === 1 ? "'" : "Q";
         const open = !vsComputer && now - pauseStarted >= PAUSE_PROTECTED_MS;
         overlayHint.textContent =
           "Resumes in " + Math.ceil(left / 1000) + "s — " +
@@ -1054,7 +1054,7 @@
         return;
       }
     }
-    if (e.code === "KeyP" && !e.repeat && !vsComputer) {
+    if (e.code === "Quote" && !e.repeat && !vsComputer) {
       if (state === "playing") { pauseGame(2); return; }
       if (state === "paused" && (pausedBy === 2 || pauseOpen())) {
         resumeGame();
