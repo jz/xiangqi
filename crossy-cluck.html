@@ -1,0 +1,1328 @@
+<!doctype html><html><head><meta charset=utf8><title>Crossy Cluck</title><meta name=viewport content="width=device-width,initial-scale=1"><style>:root{color-scheme:light}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#faf9f5;color:#141413}img{max-width:100%}</style></head><body>
+<style>
+  :root{
+    --sky:#8fd3e8; --ui-ink:#1c2a30; --ui-paper:#fffef5;
+    --accent:#ff5a3c; --gold:#ffc93c;
+  }
+  html,body{height:100%;}
+  body{
+    margin:0; background:var(--sky); overflow:hidden;
+    font-family:"Avenir Next","Helvetica Neue",Futura,system-ui,sans-serif;
+    -webkit-user-select:none; user-select:none; touch-action:none;
+  }
+  #stage{position:fixed; inset:0;}
+  canvas{display:block; width:100%; height:100%;}
+
+  /* ---------- HUD ---------- */
+  #hud{
+    position:fixed; top:0; left:0; right:0; padding:14px 18px;
+    display:flex; justify-content:space-between; align-items:flex-start;
+    pointer-events:none;
+  }
+  .score-block{color:#fff; line-height:1;}
+  #score{
+    font-size:clamp(40px,8vw,64px); font-weight:900; letter-spacing:.02em;
+    text-shadow:0 3px 0 rgba(28,42,48,.35); font-variant-numeric:tabular-nums;
+  }
+  #best{
+    margin-top:6px; font-size:13px; font-weight:700; letter-spacing:.14em;
+    text-transform:uppercase; color:rgba(255,255,255,.92);
+    text-shadow:0 2px 0 rgba(28,42,48,.3); font-variant-numeric:tabular-nums;
+  }
+  #mute{
+    pointer-events:auto; cursor:pointer; border:0; border-radius:14px;
+    width:52px; height:52px; font-size:24px; line-height:1;
+    background:rgba(255,254,245,.9); color:var(--ui-ink);
+    box-shadow:0 3px 0 rgba(28,42,48,.35);
+  }
+  #mute:active{transform:translateY(2px); box-shadow:0 1px 0 rgba(28,42,48,.35);}
+  #mute:focus-visible{outline:3px solid var(--gold); outline-offset:2px;}
+
+  /* ---------- Overlays ---------- */
+  .overlay{
+    position:fixed; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:16px; text-align:center;
+    background:rgba(28,42,48,.28); backdrop-filter:blur(2px);
+    transition:opacity .25s; padding:24px;
+  }
+  .overlay.hidden{opacity:0; pointer-events:none;}
+  .title{
+    font-size:clamp(44px,11vw,92px); font-weight:900; letter-spacing:.01em;
+    color:var(--ui-paper); line-height:.95; text-wrap:balance;
+    text-shadow:0 5px 0 var(--accent), 0 9px 0 rgba(28,42,48,.35);
+    transform:rotate(-2deg);
+  }
+  .subtitle{
+    font-size:15px; font-weight:700; letter-spacing:.18em; text-transform:uppercase;
+    color:var(--ui-paper); text-shadow:0 2px 0 rgba(28,42,48,.4);
+  }
+  .bigbtn{
+    cursor:pointer; border:0; border-radius:18px; padding:16px 42px;
+    font-family:inherit; font-size:22px; font-weight:900; letter-spacing:.08em;
+    text-transform:uppercase; color:var(--ui-paper); background:var(--accent);
+    box-shadow:0 5px 0 #b93a24, 0 9px 0 rgba(28,42,48,.3);
+  }
+  .bigbtn:active{transform:translateY(4px); box-shadow:0 1px 0 #b93a24, 0 5px 0 rgba(28,42,48,.3);}
+  .bigbtn:focus-visible{outline:3px solid var(--gold); outline-offset:3px;}
+  .hint{
+    font-size:14px; font-weight:600; color:rgba(255,254,245,.95);
+    text-shadow:0 1px 0 rgba(28,42,48,.4); max-width:44ch; line-height:1.6;
+  }
+  .diff-row{display:flex; gap:8px; flex-wrap:wrap; justify-content:center;}
+  .diff-btn{
+    cursor:pointer; border:0; border-radius:999px; padding:10px 22px;
+    font-family:inherit; font-size:14px; font-weight:800; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--ui-ink); background:rgba(255,254,245,.85);
+    box-shadow:0 3px 0 rgba(28,42,48,.35);
+  }
+  .diff-btn.selected{background:var(--gold);}
+  .diff-btn:active{transform:translateY(2px); box-shadow:0 1px 0 rgba(28,42,48,.35);}
+  .diff-btn:focus-visible{outline:3px solid var(--gold); outline-offset:2px;}
+  kbd{
+    display:inline-block; padding:1px 7px; border-radius:6px;
+    background:rgba(255,254,245,.92); color:var(--ui-ink);
+    font-family:inherit; font-weight:800; font-size:12px;
+    box-shadow:0 2px 0 rgba(28,42,48,.4);
+  }
+  #finalScore{
+    font-size:clamp(56px,14vw,110px); font-weight:900; color:var(--gold);
+    line-height:1; text-shadow:0 5px 0 rgba(28,42,48,.4);
+    font-variant-numeric:tabular-nums;
+  }
+  #deathMsg{margin-top:-6px;}
+  #vsScores{
+    display:none; font-size:20px; font-weight:900; letter-spacing:.06em;
+    color:var(--ui-paper); text-shadow:0 3px 0 rgba(28,42,48,.4);
+    font-variant-numeric:tabular-nums;
+  }
+  #newBest{
+    display:none; font-size:15px; font-weight:900; letter-spacing:.2em;
+    text-transform:uppercase; color:var(--ui-paper); background:var(--accent);
+    padding:6px 16px; border-radius:999px; transform:rotate(-2deg);
+    box-shadow:0 3px 0 rgba(28,42,48,.35);
+  }
+  @media (prefers-reduced-motion: no-preference){
+    .title{animation:bob 2.4s ease-in-out infinite;}
+    @keyframes bob{0%,100%{transform:rotate(-2deg) translateY(0)}50%{transform:rotate(-2deg) translateY(-8px)}}
+  }
+</style>
+
+<div id="stage"><canvas id="game"></canvas></div>
+
+<div id="hud">
+  <div class="score-block" id="scoreBlock">
+    <div id="score">0</div>
+    <div id="best">Best 0</div>
+  </div>
+  <button id="mute" aria-label="Toggle sound">🔊</button>
+</div>
+
+<div class="overlay" id="startScreen">
+  <div class="title">CROSSY<br>CLUCK</div>
+  <div class="subtitle" id="tagline">How far can one chicken go?</div>
+  <div class="diff-row" role="group" aria-label="Players">
+    <button class="diff-btn selected" data-mode="1">1P</button>
+    <button class="diff-btn" data-mode="2">2P</button>
+    <button class="diff-btn" data-mode="3">3P</button>
+    <button class="diff-btn" data-mode="4">4P</button>
+  </div>
+  <div class="diff-row" role="group" aria-label="Difficulty">
+    <button class="diff-btn" data-diff="easy">Easy</button>
+    <button class="diff-btn selected" data-diff="normal">Normal</button>
+    <button class="diff-btn" data-diff="hard">Hard</button>
+  </div>
+  <div class="diff-row" role="group" aria-label="Map">
+    <button class="diff-btn selected" data-map="meadow">Meadow</button>
+    <button class="diff-btn" data-map="desert">Desert</button>
+    <button class="diff-btn" data-map="snow">Snow</button>
+    <button class="diff-btn" data-map="autumn">Autumn</button>
+  </div>
+  <button class="bigbtn" id="startBtn">Hop In</button>
+  <div class="hint" id="controlsHint"></div>
+</div>
+
+<div class="overlay hidden" id="deathScreen">
+  <div class="subtitle" id="deathMsg">Squashed!</div>
+  <div id="finalScore">0</div>
+  <div id="vsScores"></div>
+  <div id="newBest">New best!</div>
+  <div class="diff-row" role="group" aria-label="Players">
+    <button class="diff-btn selected" data-mode="1">1P</button>
+    <button class="diff-btn" data-mode="2">2P</button>
+    <button class="diff-btn" data-mode="3">3P</button>
+    <button class="diff-btn" data-mode="4">4P</button>
+  </div>
+  <div class="diff-row" role="group" aria-label="Difficulty">
+    <button class="diff-btn" data-diff="easy">Easy</button>
+    <button class="diff-btn" data-diff="normal">Normal</button>
+    <button class="diff-btn" data-diff="hard">Hard</button>
+  </div>
+  <div class="diff-row" role="group" aria-label="Map">
+    <button class="diff-btn" data-map="meadow">Meadow</button>
+    <button class="diff-btn" data-map="desert">Desert</button>
+    <button class="diff-btn" data-map="snow">Snow</button>
+    <button class="diff-btn" data-map="autumn">Autumn</button>
+  </div>
+  <button class="bigbtn" id="retryBtn">Try Again</button>
+  <div class="hint">or press <kbd>Space</kbd></div>
+</div>
+
+<script>
+'use strict';
+/* =====================================================================
+   CROSSY CLUCK — a chicken vs. traffic arcade hopper
+   World units are TILES. One column = one tile. COLS visible columns.
+   Rows count upward away from the player; one camera chases the leading
+   chicken. Multiplayer (2–4 chickens) shares the SAME map and screen:
+   the round runs until every chicken is down, farthest distance wins —
+   and stragglers get scrolled off the bottom by the leader's camera.
+   ===================================================================== */
+
+const COLS = 9;
+const VROWS = 14;          // rows of lookahead the tile size is fitted to
+const PAD = 18;            // off-board tiles each side that car tracks cover
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let W = 0, H = 0, T = 0, BX = 0, marginCols = 0, DPR = 1;
+
+let mode = 1;              // number of players
+try { const m = parseInt(localStorage.getItem('crossycluck-mode')); if (m >= 1 && m <= 4) mode = m; } catch(e){}
+
+function resize(){
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = W * DPR; canvas.height = H * DPR;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  T = Math.min(W / COLS, H / VROWS);   // fit to height too, so you can see far ahead
+  BX = (W - COLS * T) / 2;             // playfield centered; margins are scenery
+  marginCols = Math.ceil(BX / T);
+}
+window.addEventListener('resize', resize);
+resize();
+
+/* ---------------- difficulty ---------------- */
+const DIFFS = {
+  easy:   { speedMul:0.8,  gap:4.2, gapVar:3.4, logGap:1.0, logLong:0.55, warn:2.2, idle:5,   trainSpeed:16, pressMul:0.65, ramp:220 },
+  normal: { speedMul:1.0,  gap:3.2, gapVar:3.0, logGap:1.4, logLong:0.35, warn:1.5, idle:3.5, trainSpeed:20, pressMul:1.0,  ramp:130 },
+  hard:   { speedMul:1.25, gap:2.5, gapVar:2.6, logGap:1.9, logLong:0.2,  warn:1.1, idle:2.5, trainSpeed:24, pressMul:1.35, ramp:90  }
+};
+let difficulty = 'normal';
+try { const d = localStorage.getItem('crossycluck-diff'); if (DIFFS[d]) difficulty = d; } catch(e){}
+
+/* ---------------- persistent best scores (per difficulty, solo only) ---------------- */
+let bests = { easy:0, normal:0, hard:0 };
+try {
+  const j = JSON.parse(localStorage.getItem('crossycluck-bests') || 'null');
+  if (j) Object.assign(bests, j);
+  else bests.normal = +localStorage.getItem('crossycluck-best') || 0;
+} catch(e){}
+const saveBests = () => { try { localStorage.setItem('crossycluck-bests', JSON.stringify(bests)); } catch(e){} };
+
+/* ---------------- audio: chiptune + sfx ---------------- */
+const AudioSys = (() => {
+  let ac = null, master = null, musicGain = null, muted = false, seqTimer = null;
+  const BPM = 138, STEP = 60 / BPM / 2;          // eighth notes
+  const f = m => 440 * Math.pow(2, (m - 69) / 12);
+  // C — Am — F — G, four bars of eighths (0 = rest)
+  const MEL = [72,0,76,0, 79,0,76,0,  81,0,79,0, 76,0,72,0,
+               77,0,81,0, 79,0,77,0,  76,74,72,74, 76,0,79,0];
+  const BAS = [48,0,55,0, 48,0,55,0,  45,0,52,0, 45,0,52,0,
+               41,0,48,0, 41,0,48,0,  43,0,50,0, 43,47,50,55];
+  let step = 0, nextT = 0, noiseBuf = null;
+
+  function ensure(){
+    if (ac) return;
+    ac = new (window.AudioContext || window.webkitAudioContext)();
+    master = ac.createGain(); master.gain.value = muted ? 0 : 1;
+    master.connect(ac.destination);
+    musicGain = ac.createGain(); musicGain.gain.value = 0.5;
+    musicGain.connect(master);
+    noiseBuf = ac.createBuffer(1, ac.sampleRate * 0.5, ac.sampleRate);
+    const d = noiseBuf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  }
+  function tone(dest, type, freq, t, dur, vol, slideTo){
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(g); g.connect(dest);
+    o.start(t); o.stop(t + dur + 0.02);
+  }
+  function hat(t, vol){
+    const s = ac.createBufferSource(); s.buffer = noiseBuf;
+    const hp = ac.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 7000;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.04);
+    s.connect(hp); hp.connect(g); g.connect(musicGain);
+    s.start(t); s.stop(t + 0.06);
+  }
+  function schedule(){
+    while (nextT < ac.currentTime + 0.25){
+      const i = step % MEL.length;
+      if (MEL[i]) tone(musicGain, 'square',   f(MEL[i]), nextT, STEP * 0.9, 0.055);
+      if (BAS[i]) tone(musicGain, 'triangle', f(BAS[i]), nextT, STEP * 0.95, 0.16);
+      if (step % 2 === 0) hat(nextT, step % 8 === 4 ? 0.05 : 0.025);
+      nextT += STEP; step++;
+    }
+  }
+  return {
+    start(){                                   // must be called from a user gesture
+      ensure();
+      if (ac.state === 'suspended') ac.resume();
+      if (!seqTimer){ nextT = ac.currentTime + 0.05; seqTimer = setInterval(schedule, 90); }
+    },
+    hop(){
+      if (!ac || muted) return;
+      tone(master, 'square', 620, ac.currentTime, 0.07, 0.08, 940);
+    },
+    crash(){
+      if (!ac || muted) return;
+      const t = ac.currentTime;
+      tone(master, 'sawtooth', 300, t, 0.4, 0.22, 55);
+      const s = ac.createBufferSource(); s.buffer = noiseBuf;
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0.3, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+      s.connect(g); g.connect(master); s.start(t); s.stop(t + 0.3);
+    },
+    splash(){
+      if (!ac || muted) return;
+      const t = ac.currentTime;
+      tone(master, 'sine', 500, t, 0.35, 0.25, 90);
+      const s = ac.createBufferSource(); s.buffer = noiseBuf;
+      const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1200;
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0.25, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+      s.connect(lp); lp.connect(g); g.connect(master); s.start(t); s.stop(t + 0.35);
+    },
+    crack(){
+      if (!ac || muted) return;
+      const t = ac.currentTime;
+      const s = ac.createBufferSource(); s.buffer = noiseBuf;
+      const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2200;
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0.3, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+      s.connect(bp); bp.connect(g); g.connect(master); s.start(t); s.stop(t + 0.12);
+      tone(master, 'square', 180, t, 0.08, 0.1, 90);
+    },
+    fall(){
+      if (!ac || muted) return;
+      const t = ac.currentTime;
+      tone(master, 'sine', 700, t, 0.5, 0.2, 80);        // descending whistle
+      tone(master, 'sine', 90, t + 0.42, 0.15, 0.25, 50); // distant thud
+    },
+    fanfare(){
+      if (!ac || muted) return;
+      const t = ac.currentTime;
+      [72,76,79,84].forEach((m,i)=> tone(master, 'square', f(m), t + i*0.11, 0.22, 0.09));
+    },
+    horn(){
+      if (!ac || muted) return;
+      const t = ac.currentTime;
+      tone(master, 'square', 311, t, 0.18, 0.07);
+      tone(master, 'square', 247, t, 0.18, 0.07);
+      tone(master, 'square', 311, t + 0.26, 0.35, 0.07);
+      tone(master, 'square', 247, t + 0.26, 0.35, 0.07);
+    },
+    toggle(){
+      muted = !muted;
+      if (master) master.gain.value = muted ? 0 : 1;
+      return muted;
+    },
+    get muted(){ return muted; }
+  };
+})();
+
+/* ---------------- map themes ---------------- */
+const MAPS = {
+  meadow: { name:'Meadow', grassA:'#93cf58', grassB:'#9ed864', waterA:'#46a8d8', waterB:'#4fb2e0',
+            foliage:'#57b552', foliageLight:'#6bc862', trunk:'#6f4527', trunkLight:'#a9764b', trunkTop:'#845634' },
+  desert: { name:'Desert', grassA:'#e3bd72', grassB:'#edc881', waterA:'#2f9e93', waterB:'#39ab9e',
+            foliage:'#5a9a55', foliageLight:'#71b167', trunk:'#7a5230', trunkLight:'#a97a45', trunkTop:'#6b4526' },
+  snow:   { name:'Snow', grassA:'#eef6fb', grassB:'#e2edf5', waterA:'#3f80a8', waterB:'#4c90ba',
+            foliage:'#dbe9ef', foliageLight:'#c6dbe4', trunk:'#5c4632', trunkLight:'#7a5c40', trunkTop:'#4a3826' },
+  autumn: { name:'Autumn', grassA:'#c68c4c', grassB:'#d29a5b', waterA:'#3f8fa0', waterB:'#4a9cae',
+            foliage:'#d1642e', foliageLight:'#e0813f', trunk:'#5c3d24', trunkLight:'#7a5230', trunkTop:'#4a3018' }
+};
+let mapKey = 'meadow';
+try { const m = localStorage.getItem('crossycluck-map'); if (MAPS[m]) mapKey = m; } catch(e){}
+
+/* ---------------- day / night ---------------- */
+// the further the leader has traveled, the later it gets — this only advances forward
+const DAY_ROWS = 60;
+let dayT = 0;
+const SKY_STOPS = [
+  { t:0,    top:'#69c6e8', bottom:'#8fd3e8' },   // midday
+  { t:0.55, top:'#5695c4', bottom:'#8bbfd6' },   // late afternoon
+  { t:0.72, top:'#e8935f', bottom:'#f6c988' },   // sunset
+  { t:0.86, top:'#5b4a7a', bottom:'#c97a63' },   // dusk
+  { t:1,    top:'#0b1026', bottom:'#1c2a4a' }    // night
+];
+function lerpHex(a, b, t){
+  const na = parseInt(a.slice(1), 16), nb = parseInt(b.slice(1), 16);
+  const r = ((na >> 16) & 255) + (((nb >> 16) & 255) - ((na >> 16) & 255)) * t;
+  const g = ((na >> 8) & 255) + (((nb >> 8) & 255) - ((na >> 8) & 255)) * t;
+  const bl = (na & 255) + ((nb & 255) - (na & 255)) * t;
+  return `rgb(${r | 0},${g | 0},${bl | 0})`;
+}
+function skyColors(t){
+  for (let i = 0; i < SKY_STOPS.length - 1; i++){
+    const a = SKY_STOPS[i], b = SKY_STOPS[i + 1];
+    if (t <= b.t){
+      const lt = (t - a.t) / (b.t - a.t || 1);
+      return { top: lerpHex(a.top, b.top, lt), bottom: lerpHex(a.bottom, b.bottom, lt) };
+    }
+  }
+  return { top: SKY_STOPS.at(-1).top, bottom: SKY_STOPS.at(-1).bottom };
+}
+function tintRGB(r, g, b, amt){                  // darkens and cools toward navy as night falls
+  if (amt > 0){
+    r = r * (1 - amt * 0.55) + 18 * amt * 0.55;
+    g = g * (1 - amt * 0.55) + 26 * amt * 0.55;
+    b = b * (1 - amt * 0.4) + 62 * amt * 0.4;
+  }
+  return `rgb(${r | 0},${g | 0},${b | 0})`;
+}
+function nightTint(hex, amt){
+  const n = parseInt(hex.slice(1), 16);
+  return tintRGB((n >> 16) & 255, (n >> 8) & 255, n & 255, amt);
+}
+function shadeTint(hex, shadeAmt, dayT){         // per-channel shade, then night-tinted
+  const n = parseInt(hex.slice(1), 16);
+  return tintRGB(((n >> 16) & 255) + shadeAmt, ((n >> 8) & 255) + shadeAmt, (n & 255) + shadeAmt, dayT);
+}
+const STARS = Array.from({ length: 70 }, (_, i) => ({
+  x: hash(i * 3 + 1, 0), y: hash(i * 3 + 2, 0) * 0.62, r: 0.6 + hash(i * 3 + 3, 0) * 1.3
+}));
+
+/* ---------------- world generation ---------------- */
+const CAR_COLORS = ['#ff5a3c','#ffc93c','#3aa4de','#9b6bd4','#49c47a','#f0743e','#e84f8a'];
+let rows = [];        // rows[i] = {type:'grass'|'road'|'water'|'rail', ...}
+let pending = 0;      // remaining rows in current generated group
+let pendingType = '';
+
+function makeGrassRow(i){
+  const trees = new Array(COLS).fill(false);
+  if (i > 2){
+    let n = 1 + Math.floor(Math.random() * 3);   // 1–3 trees, never a wall
+    while (n--){
+      const c = Math.floor(Math.random() * COLS);
+      trees[c] = true;
+    }
+  }
+  return { type:'grass', trees };
+}
+function makeRoadRow(i){
+  const D = DIFFS[difficulty];
+  const dir = Math.random() < 0.5 ? 1 : -1;
+  const speed = (1.6 + Math.random() * 1.6 + Math.min(i / D.ramp, 1.4)) * D.speedMul; // tiles/sec
+  const period = COLS + PAD * 2;                 // wrap-around track length in tiles
+  const cars = [];
+  let s = Math.random() * 3;
+  while (s < period - 3){
+    const len = Math.random() < 0.25 ? 2 : 1;    // occasional truck
+    cars.push({ s, len, color: CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)] });
+    s += len + D.gap + Math.random() * D.gapVar;
+  }
+  // once in a while the asphalt is cracked: step on it and it gives way
+  const holes = [];
+  if (i > 8 && Math.random() < 0.3){
+    holes.push({ c: Math.floor(Math.random() * COLS), phase:'cracked', t:0 });
+    if (Math.random() < 0.15){
+      const c2 = Math.floor(Math.random() * COLS);
+      if (!holes.some(h => h.c === c2)) holes.push({ c: c2, phase:'cracked', t:0 });
+    }
+  }
+  return { type:'road', dir, speed, period, cars, holes };
+}
+function makeWaterRow(i){
+  const D = DIFFS[difficulty];
+  const prev = rows[i - 1];
+  const dir = prev && prev.type === 'water' ? -prev.dir : (Math.random() < 0.5 ? 1 : -1);
+  const speed = (0.7 + Math.random() * 0.8 + Math.min(i / 200, 0.6)) * D.speedMul;
+  const period = COLS + PAD * 2;
+  const logs = [];
+  let s = Math.random() * 2;
+  while (s < period - 3){
+    const len = Math.random() < D.logLong ? 3 : 2;
+    logs.push({ s, len });
+    s += len + D.logGap + Math.random() * 1.8;
+  }
+  return { type:'water', dir, speed, period, logs };
+}
+function makeRailRow(i){
+  return {
+    type:'rail', dir: Math.random() < 0.5 ? 1 : -1,
+    phase:'idle', timer: 2 + Math.random() * 6,
+    trainX: 0, trainSpeed: DIFFS[difficulty].trainSpeed, trainLen: 11
+  };
+}
+function makeRow(type, i){
+  return type === 'road' ? makeRoadRow(i) : type === 'water' ? makeWaterRow(i) : makeGrassRow(i);
+}
+function genRowsTo(maxIdx){
+  while (rows.length <= maxIdx){
+    const i = rows.length;
+    if (i < 4){ rows.push(makeGrassRow(i)); continue; }
+    if (pending > 0){ pending--; rows.push(makeRow(pendingType, i)); continue; }
+    const p = Math.random();
+    if (p < 0.40){
+      pendingType = 'road'; pending = Math.floor(Math.random() * 3);   // 1–3 lanes
+      rows.push(makeRoadRow(i));
+    } else if (p < 0.60){
+      pendingType = 'water'; pending = Math.random() < 0.4 ? 1 : 0;    // 1–2 rivers
+      rows.push(makeWaterRow(i));
+    } else if (p < 0.70){
+      rows.push(makeRailRow(i));                                        // single track
+    } else {
+      pendingType = 'grass'; pending = Math.random() < 0.5 ? 1 : 0;
+      rows.push(makeGrassRow(i));
+    }
+  }
+}
+
+/* ---------------- players ---------------- */
+const PALS = [
+  { name:'P1', body:'#fffef5', side:'#e4ddc8', wing:'#f2ecd9', wingSide:'#d8d1bb', feather:'#fffef5', tag:'#fffef5', band:'#ff5a3c', bandDark:'#c9432b' },
+  { name:'P2', body:'#ffd9a0', side:'#dcae66', wing:'#f3c87e', wingSide:'#d0a45a', feather:'#ffd9a0', tag:'#ffd9a0', band:'#3aa4de', bandDark:'#2c7ba8' },
+  { name:'P3', body:'#ffb0c8', side:'#d97e9d', wing:'#f398b4', wingSide:'#cf7492', feather:'#ffb0c8', tag:'#ffb0c8', band:'#9b6bd4', bandDark:'#7248a8' },
+  { name:'P4', body:'#b7dcff', side:'#7fabd9', wing:'#a3ccf3', wingSide:'#729cc9', feather:'#b7dcff', tag:'#b7dcff', band:'#49c47a', bandDark:'#33925a' }
+];
+const START_COLS = { 1:[4], 2:[3,5], 3:[2,4,6], 4:[1,3,5,7] };
+function makePlayer(i, col){
+  return {
+    idx: i, score: 0, maxRow: 1,
+    alive: true, queued: null, deathBy: '', deathTime: 0,
+    ghost: false, ghostGone: false, ghostFall: 0, ghostRiseAt: 0,
+    chicken: { col, row:1, fromCol:col, fromRow:1, hopT:1, facing:0, colF:col, rowF:1, z:0, ride:null, trapped:false }
+  };
+}
+let players = [makePlayer(0, 4)];
+
+let state = 'start';           // start | play | dead
+let cam = 0, pressure = 0;     // one camera, chasing the leading chicken
+let shake = 0;
+let feathers = [];
+
+const $ = id => document.getElementById(id);
+const scoreEl = $('score'), bestEl = $('best');
+
+function syncDiffUI(){
+  document.querySelectorAll('[data-diff]').forEach(b =>
+    b.classList.toggle('selected', b.dataset.diff === difficulty));
+  bestEl.textContent = 'Best ' + bests[difficulty];
+}
+function syncModeUI(){
+  document.querySelectorAll('[data-mode]').forEach(b =>
+    b.classList.toggle('selected', +b.dataset.mode === mode));
+  $('tagline').textContent = mode > 1
+    ? 'One road. ' + mode + ' chickens. Farthest wins.'
+    : 'How far can one chicken go?';
+  $('controlsHint').innerHTML = mode > 1
+    ? ['<kbd>WASD</kbd> P1', '<kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd> P2', '<kbd>I</kbd><kbd>J</kbd><kbd>K</kbd><kbd>L</kbd> P3', '<kbd>T</kbd><kbd>F</kbd><kbd>G</kbd><kbd>H</kbd> P4']
+        .slice(0, mode).join(' · ')
+      + ' · same course for everyone — the camera chases the leader, don’t fall behind · however you die, you rise as a ghost — even falling through a crack, once the spirit climbs out — steer it into rivals, but keep it off other cracks · the longer the leader survives, the later it gets'
+    : '<kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> or <kbd>WASD</kbd> to hop · tap / swipe on mobile · ride the driftwood · when the red lights flash, a train is coming · cracked asphalt traps you and gives way — never step on it · the longer you survive, the later it gets';
+}
+document.querySelectorAll('[data-diff]').forEach(b => b.addEventListener('click', () => {
+  difficulty = b.dataset.diff;
+  try { localStorage.setItem('crossycluck-diff', difficulty); } catch(e){}
+  syncDiffUI();
+}));
+document.querySelectorAll('[data-mode]').forEach(b => b.addEventListener('click', () => {
+  mode = +b.dataset.mode;
+  try { localStorage.setItem('crossycluck-mode', mode); } catch(e){}
+  syncModeUI();
+}));
+function syncMapUI(){
+  document.querySelectorAll('[data-map]').forEach(b =>
+    b.classList.toggle('selected', b.dataset.map === mapKey));
+}
+document.querySelectorAll('[data-map]').forEach(b => b.addEventListener('click', () => {
+  mapKey = b.dataset.map;
+  try { localStorage.setItem('crossycluck-map', mapKey); } catch(e){}
+  syncMapUI();
+}));
+syncDiffUI(); syncModeUI(); syncMapUI();
+
+function resetGame(){
+  rows = []; pending = 0; pendingType = ''; genRowsTo(40);
+  players = START_COLS[mode].map((col, i) => makePlayer(i, col));
+  cam = 0; pressure = 0; shake = 0; feathers = []; dayT = 0;
+  scoreEl.textContent = '0';
+  $('scoreBlock').style.display = mode > 1 ? 'none' : '';
+}
+
+/* ---------------- movement ---------------- */
+function sideMargin(){                 // visible scenery columns beyond the board
+  // capped below PAD so hazards still cover every reachable column and
+  // drifting logs are killed off before their track wraps around
+  return Math.max(0, Math.min(PAD - 2, BX / T));
+}
+const GHOST_RISE = 700;                // ms of rising before a ghost is active
+function tryGhostHop(p, dc, dr, face){
+  const ch = p.chicken;
+  if (state !== 'play' || p.ghostGone) return;
+  if (performance.now() - p.ghostRiseAt < GHOST_RISE) return;   // still rising
+  if (ch.hopT < 1) return;             // ghosts drift slowly: no hop buffering
+  const nc = Math.round(ch.col) + dc, nr = ch.row + dr;
+  ch.facing = face;
+  const mc = Math.floor(sideMargin());
+  if (nc < -mc || nc >= COLS + mc || nr < Math.floor(cam) || nr < 0) return;
+  genRowsTo(nr + 30);
+  // ghosts float over trees, water and traffic — nothing blocks them
+  ch.fromCol = ch.col; ch.fromRow = ch.row;
+  ch.ride = null;
+  ch.col = nc; ch.row = nr; ch.hopT = 0;
+}
+function tryHop(p, dc, dr, face){
+  if (p.ghost) return tryGhostHop(p, dc, dr, face);
+  if (state !== 'play' || !p.alive) return;
+  const ch = p.chicken;
+  if (ch.trapped) return;              // stuck in crumbling asphalt
+  if (ch.hopT < 0.7){ p.queued = [dc, dr, face]; return; }
+  const nc = Math.round(ch.col) + dc, nr = ch.row + dr;
+  ch.facing = face;
+  const mc = Math.floor(sideMargin());
+  if (nc < -mc || nc >= COLS + mc || nr < 0) return;
+  genRowsTo(nr + 30);
+  const target = rows[nr];
+  if (target.type === 'grass'){
+    // board trees come from the row; margin trees are the deterministic hash forest
+    const blocked = nc >= 0 && nc < COLS ? target.trees[nc] : hash(nr, nc) < 0.4;
+    if (blocked) return;
+  }
+  // don't allow hopping below the camera edge
+  if (nr < Math.floor(cam)) return;
+  ch.fromCol = ch.col; ch.fromRow = ch.row;
+  ch.ride = null;
+  ch.col = nc; ch.row = nr; ch.hopT = 0;
+  AudioSys.hop();
+  if (nr > p.maxRow){
+    p.maxRow = nr; p.score = p.maxRow - 1;
+    if (mode === 1) scoreEl.textContent = p.score;
+  }
+}
+
+/* ---------------- input ---------------- */
+const KEYMAPS = [
+  { KeyW:[0,1,0], KeyS:[0,-1,2], KeyA:[-1,0,3], KeyD:[1,0,1] },                 // P1
+  { ArrowUp:[0,1,0], ArrowDown:[0,-1,2], ArrowLeft:[-1,0,3], ArrowRight:[1,0,1] }, // P2
+  { KeyI:[0,1,0], KeyK:[0,-1,2], KeyJ:[-1,0,3], KeyL:[1,0,1] },                 // P3
+  { KeyT:[0,1,0], KeyG:[0,-1,2], KeyF:[-1,0,3], KeyH:[1,0,1] }                  // P4
+];
+window.addEventListener('keydown', e => {
+  if (e.repeat) return;
+  if (state === 'start' && (e.code === 'Space' || e.code === 'Enter' || e.code === 'ArrowUp')){ startGame(); return; }
+  if (state === 'dead' && (e.code === 'Space' || e.code === 'Enter' || e.code === 'KeyR')){ startGame(); return; }
+  if (mode === 1){
+    const m = KEYMAPS[0][e.code] || KEYMAPS[1][e.code] || (e.code === 'Space' ? [0,1,0] : null);
+    if (m){ e.preventDefault(); tryHop(players[0], ...m); }
+    return;
+  }
+  for (let i = 0; i < players.length; i++){
+    const m = KEYMAPS[i][e.code];
+    if (m){ e.preventDefault(); tryHop(players[i], ...m); }
+  }
+});
+
+// touch / mouse steer P1 (multiplayer is a keyboard-couch affair)
+let touchStart = null;
+canvas.addEventListener('touchstart', e => { touchStart = e.changedTouches[0]; e.preventDefault(); }, {passive:false});
+canvas.addEventListener('touchend', e => {
+  if (!touchStart) return;
+  const t = e.changedTouches[0];
+  const dx = t.clientX - touchStart.clientX, dy = t.clientY - touchStart.clientY;
+  touchStart = null;
+  if (state !== 'play') return;
+  if (Math.abs(dx) < 24 && Math.abs(dy) < 24) tryHop(players[0], 0, 1, 0);     // tap = forward
+  else if (Math.abs(dx) > Math.abs(dy)) tryHop(players[0], dx > 0 ? 1 : -1, 0, dx > 0 ? 1 : 3);
+  else tryHop(players[0], 0, dy < 0 ? 1 : -1, dy < 0 ? 0 : 2);
+  e.preventDefault();
+}, {passive:false});
+canvas.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'mouse' && state === 'play') tryHop(players[0], 0, 1, 0);
+});
+
+/* ---------------- lifecycle ---------------- */
+function startGame(){
+  AudioSys.start();
+  resetGame();
+  state = 'play';
+  $('startScreen').classList.add('hidden');
+  $('deathScreen').classList.add('hidden');
+}
+function die(p, msg){
+  if (state !== 'play' || !p.alive) return;
+  p.alive = false; p.deathBy = msg; p.deathTime = performance.now();
+  const wet = msg === 'Splash!' || msg === 'Swept away!';
+  const fell = msg === 'The road gave way!';
+  if (wet) AudioSys.splash(); else if (fell) AudioSys.fall(); else AudioSys.crash();
+  shake = wet || fell ? 0.4 : 1;
+  const ch = p.chicken;
+  for (let i = 0; i < 26; i++){
+    feathers.push({
+      x: ch.colF + 0.5, y: ch.rowF, z: 0.3 + Math.random() * 0.4,
+      vx: (Math.random() - 0.5) * 6, vy: (Math.random() - 0.5) * 4,
+      vz: 2 + Math.random() * 4, rot: Math.random() * 7, vr: (Math.random() - 0.5) * 10,
+      life: 1, color: wet ? '#cfeef8' : fell ? '#8f959c' : PALS[p.idx].feather
+    });
+  }
+  if (mode > 1){
+    // every death rises as a ghost — a faller's spirit climbs out of the pit
+    // once the tumble-through animation finishes, everyone else rises right away
+    p.ghost = true;
+    p.ghostRiseAt = p.deathTime + (fell ? 450 : 0);
+    ch.trapped = false; ch.ride = null; ch.hopT = 1;
+    ch.fromCol = ch.col = Math.round(Math.max(-sideMargin(), Math.min(COLS - 1 + sideMargin(), ch.colF)));
+    ch.colF = ch.col;
+    ch.fromRow = ch.row; ch.rowF = ch.row;
+    // the round runs until EVERY chicken is down; farthest distance wins
+    if (players.some(pl => pl.alive)) return;
+    state = 'dead';
+    const top = Math.max(...players.map(pl => pl.score));
+    const winners = players.filter(pl => pl.score === top);
+    const tie = winners.length > 1;
+    $('deathMsg').textContent = tie
+      ? 'Dead heat between ' + winners.map(w => PALS[w.idx].name).join(' & ') + '!'
+      : `${PALS[winners[0].idx].name} went farther!`;
+    $('finalScore').textContent = tie ? "IT'S A TIE" : `${PALS[winners[0].idx].name} WINS`;
+    $('vsScores').textContent = players.map(pl => `${PALS[pl.idx].name} ${pl.score}`).join(' · ');
+    $('vsScores').style.display = 'block';
+    $('newBest').style.display = 'none';
+    if (!tie) setTimeout(() => AudioSys.fanfare(), 500);
+    setTimeout(() => $('deathScreen').classList.remove('hidden'), 1000);
+  } else {
+    state = 'dead';
+    if (p.score > bests[difficulty]){
+      bests[difficulty] = p.score; saveBests();
+      $('newBest').style.display = 'inline-block';
+    } else $('newBest').style.display = 'none';
+    bestEl.textContent = 'Best ' + bests[difficulty];
+    $('finalScore').textContent = p.score;
+    $('deathMsg').textContent = msg;
+    $('vsScores').style.display = 'none';
+    setTimeout(() => $('deathScreen').classList.remove('hidden'), 750);
+  }
+}
+
+$('startBtn').addEventListener('click', startGame);
+$('retryBtn').addEventListener('click', startGame);
+$('mute').addEventListener('click', () => {
+  const m = AudioSys.toggle();
+  $('mute').textContent = m ? '🔇' : '🔊';
+});
+
+/* ---------------- update ---------------- */
+let last = performance.now();
+function onLand(p){
+  if (state !== 'play' || !p.alive) return;
+  const ch = p.chicken;
+  const row = rows[ch.row];
+  if (row && row.type === 'road'){
+    const h = row.holes.find(o => o.c === Math.round(ch.col));
+    if (h){
+      if (h.phase === 'open'){ die(p, 'The road gave way!'); return; }
+      if (h.phase === 'cracked'){ h.phase = 'breaking'; h.t = 0.4; AudioSys.crack(); }
+      // the crumbling asphalt swallows a foot — no hopping off now
+      ch.trapped = true; p.queued = null;
+    }
+    return;
+  }
+  if (row && row.type === 'water'){
+    const cx = ch.col + 0.5;
+    for (const l of row.logs){
+      const lx = carX(row, l);
+      // generous platform edges: nearly the whole visible log counts as footing
+      if (cx > lx + 0.05 && cx < lx + l.len - 0.05){
+        ch.ride = { log: l, offset: ch.col - lx };
+        return;
+      }
+    }
+    die(p, 'Splash!');
+  }
+}
+function updateRail(row, r, dt){
+  row.timer -= dt;
+  if (row.phase === 'idle' && row.timer <= 0){
+    row.phase = 'warn'; row.timer = DIFFS[difficulty].warn;
+    if (players.some(p => p.alive && Math.abs(r - p.chicken.row) < 12)) AudioSys.horn();
+  } else if (row.phase === 'warn' && row.timer <= 0){
+    row.phase = 'train';
+    row.trainX = row.dir > 0 ? -PAD - row.trainLen : COLS + PAD;
+  } else if (row.phase === 'train'){
+    row.trainX += row.dir * row.trainSpeed * dt;
+    if (row.dir > 0 ? row.trainX > COLS + PAD : row.trainX + row.trainLen < -PAD){
+      row.phase = 'idle'; row.timer = DIFFS[difficulty].idle + Math.random() * 5;
+    }
+  }
+}
+function update(dt){
+  // the day only ever gets later, tracking whoever has gone farthest
+  dayT = Math.min(1, Math.max(...players.map(p => p.maxRow)) / DAY_ROWS);
+
+  // hop animation per chicken
+  for (const p of players){
+    const ch = p.chicken;
+    if (ch.hopT < 1){
+      // ghosts glide at well under half hopping speed
+      ch.hopT = Math.min(1, ch.hopT + dt / (p.ghost ? 0.34 : 0.13));
+      if (ch.hopT >= 1 && !p.ghost){
+        onLand(p);
+        if (p.queued){ const q = p.queued; p.queued = null; tryHop(p, ...q); }
+      }
+    }
+    const e = ch.hopT, ease = e * (2 - e);
+    ch.colF = ch.fromCol + (ch.col - ch.fromCol) * ease;
+    ch.rowF = ch.fromRow + (ch.row - ch.fromRow) * ease;
+    ch.z = Math.sin(Math.min(e, 1) * Math.PI) * 0.35;
+  }
+
+  // lanes: traffic, driftwood, trains
+  const lo = Math.floor(cam) - 2, hi = Math.floor(cam) + Math.ceil(H / T) + 2;
+  genRowsTo(hi + 10);
+  for (let r = Math.max(0, lo); r <= hi; r++){
+    const row = rows[r];
+    if (row.type === 'road'){
+      for (const c of row.cars) c.s = (c.s + row.speed * dt) % row.period;
+      for (const h of row.holes){
+        if (h.phase === 'breaking'){ h.t -= dt; if (h.t <= 0) h.phase = 'open'; }
+      }
+    } else if (row.type === 'water'){
+      for (const l of row.logs) l.s = (l.s + row.speed * dt) % row.period;
+    } else if (row.type === 'rail'){
+      updateRail(row, r, dt);
+    }
+  }
+
+  // collisions + riding, per chicken
+  for (const p of players){
+    if (state !== 'play') break;
+    if (!p.alive) continue;
+    const ch = p.chicken;
+    // chicken hitbox is half a tile wide — smaller than the sprite looks
+    const r = Math.round(ch.rowF);
+    if (Math.abs(ch.rowF - r) < 0.4 && ch.z < 0.22 && rows[r]){
+      const row = rows[r];
+      const hitA = ch.colF + 0.25, hitB = ch.colF + 0.75;
+      if (row.type === 'road'){
+        for (const c of row.cars){
+          const x = carX(row, c);   // car hitbox shrunk 0.15 tiles per side
+          if (hitA < x + c.len - 0.15 && hitB > x + 0.15){ die(p, 'Squashed!'); break; }
+        }
+        // still standing there when the cracked asphalt finishes breaking?
+        if (p.alive && ch.hopT >= 1){
+          for (const h of row.holes)
+            if (h.phase === 'open' && ch.row === r && Math.round(ch.col) === h.c){ die(p, 'The road gave way!'); break; }
+        }
+      } else if (row.type === 'rail' && row.phase === 'train'){
+        if (hitA < row.trainX + row.trainLen - 0.2 && hitB > row.trainX + 0.2) die(p, 'Hit by the train!');
+      }
+    }
+
+    // riding driftwood: drift with the current, die if swept off the map
+    if (p.alive && ch.ride && ch.hopT >= 1){
+      const rrow = rows[ch.row];
+      ch.col = carX(rrow, ch.ride.log) + ch.ride.offset;
+      ch.fromCol = ch.col; ch.colF = ch.col;
+      // out of bounds is the side of the visible map, not the board edge
+      const center = ch.col + 0.5, m = sideMargin();
+      if (center < -m || center > COLS + m) die(p, 'Swept away!');
+    }
+  }
+
+  // ghosts: carried by the camera, felled only by cracks, lethal to the living
+  for (const p of players){
+    if (!p.ghost || p.ghostGone || performance.now() < p.ghostRiseAt) continue;  // still tumbling through the crack
+    const ch = p.chicken;
+    const active = performance.now() - p.ghostRiseAt > GHOST_RISE;
+    // the screen edge shoves the ghost along — it can never be left behind
+    if (ch.hopT >= 1 && ch.rowF < cam - 0.5){
+      ch.fromCol = ch.col; ch.fromRow = ch.row;
+      ch.row++; ch.hopT = 0;
+      genRowsTo(ch.row + 30);
+    }
+    if (!active || state !== 'play') continue;
+    // drifting onto cracked asphalt drags even a ghost under
+    if (ch.hopT >= 1){
+      const row = rows[ch.row];
+      if (row && row.type === 'road' && row.holes.some(h => h.c === Math.round(ch.col))){
+        p.ghost = false; p.ghostGone = true; p.ghostFall = performance.now();
+        AudioSys.fall();
+        continue;
+      }
+    }
+    // brushing a ghost is fatal
+    for (const q of players){
+      if (!q.alive) continue;
+      if (Math.abs(ch.colF - q.chicken.colF) < 0.55 && Math.abs(ch.rowF - q.chicken.rowF) < 0.55)
+        die(q, 'Spooked by a ghost!');
+    }
+  }
+
+  if (state === 'play'){
+    // camera: chase the leading living chicken + relentless forward pressure
+    const leader = Math.max(...players.filter(p => p.alive).map(p => p.maxRow));
+    pressure = Math.min(pressure + dt * 0.012, 0.9);
+    const desired = Math.max(0, leader - 3);     // chicken rides low → long view ahead
+    cam += Math.max(0, (desired - cam)) * Math.min(1, dt * 2.5);
+    cam += (0.25 + pressure) * DIFFS[difficulty].pressMul * dt;
+    // fell off the bottom of the screen?
+    for (const p of players){
+      if (p.alive && p.chicken.rowF < cam - 1.1) die(p, 'The road left you behind!');
+    }
+  }
+
+  // feathers
+  for (const f of feathers){
+    f.x += f.vx * dt; f.y += f.vy * dt; f.z += f.vz * dt;
+    f.vz -= 14 * dt; if (f.z < 0){ f.z = 0; f.vz *= -0.3; }
+    f.rot += f.vr * dt; f.life -= dt * 0.55;
+  }
+  feathers = feathers.filter(f => f.life > 0);
+  shake = Math.max(0, shake - dt * 3);
+}
+
+/* ---------------- render helpers ---------------- */
+const rowScreenY = r => H - (r - cam) * T - T * 1.2;        // top edge of the row strip
+function hash(r, c){                                        // deterministic per-tile noise
+  const h = Math.sin(r * 127.1 + c * 311.7) * 43758.5453;
+  return h - Math.floor(h);
+}
+function carX(row, c){                                      // left edge in cols
+  return row.dir > 0 ? c.s - PAD : COLS + PAD - c.s - c.len;
+}
+function block(x, y, w, h, depth, top, side){
+  ctx.fillStyle = side;                 // front face
+  ctx.fillRect(x, y - depth + h, w, depth);
+  ctx.fillStyle = top;                  // top face
+  ctx.fillRect(x, y - depth, w, h);
+}
+function shadow(cx, cy, r){
+  ctx.fillStyle = 'rgba(28,42,48,.22)';
+  ctx.beginPath(); ctx.ellipse(cx, cy, r, r * 0.45, 0, 0, 7); ctx.fill();
+}
+
+function drawChicken(p){
+  const ch = p.chicken, pal = PALS[p.idx];
+  const gone = !p.alive;
+  const fellDead = gone && p.deathBy === 'The road gave way!';
+  const fall = fellDead ? (performance.now() - p.deathTime) / 450 : 0;   // tumbling through the fissure
+  if (p.ghostGone) return;
+  if (p.ghost && !(fellDead && fall < 1)) return;   // the ghost (drawn later) took over from the corpse
+  if (fellDead && fall >= 1) return;                 // fully sunk; solo mode has no ghost to hand off to
+  const wetDead = gone && (p.deathBy === 'Splash!' || p.deathBy === 'Swept away!');
+  if (wetDead && performance.now() - p.deathTime > 220) return;   // sank beneath the surface
+  const x = BX + ch.colF * T;
+  let y = rowScreenY(ch.rowF) + T;
+  if (ch.ride) y -= T * 0.14;                                     // perched on the driftwood
+  const lift = ch.z * T * 1.6;
+  const u = T / 10;
+  const dead = gone && (p.deathBy === 'Squashed!' || p.deathBy === 'Hit by the train!');
+  if (!fellDead) shadow(x + T/2, y - u, T * (0.32 - ch.z * 0.12));
+  ctx.save();
+  ctx.translate(x + T/2, y - lift);
+  if (fellDead){                        // drop into the gap, shrinking with distance
+    ctx.translate(0, fall * T * 0.75);
+    ctx.scale(1 - fall * 0.85, 1 - fall * 0.85);
+    ctx.rotate(fall * (hash(ch.row, ch.col) - 0.5) * 2.4);
+    ctx.globalAlpha = 1 - fall * 0.65;
+  } else if (ch.trapped && !gone){      // flailing, foot caught in the asphalt
+    ctx.translate((Math.random() - 0.5) * u, u * 0.5);
+    ctx.rotate((Math.random() - 0.5) * 0.16);
+  }
+  const sq = dead ? 0.35 : 1;           // flattened when hit
+  // body
+  block(-3.2*u, -5.5*u*sq, 6.4*u, 3*u*sq, 3.4*u*sq, pal.body, pal.side);
+  // head (taller block, offset toward facing)
+  const hx = ch.facing === 1 ? 0.8*u : ch.facing === 3 ? -2.6*u : -1*u;
+  block(hx, -8.5*u*sq, 2.6*u, 2.2*u*sq, 2.4*u*sq, pal.body, pal.side);
+  // comb
+  block(hx + 0.5*u, -9.6*u*sq, 1.4*u, 1*u*sq, 0.6*u, '#ff5a3c', '#c9432b');
+  // beak
+  const bx = ch.facing === 1 ? 3.4*u : ch.facing === 3 ? -4.6*u : hx + 0.65*u;
+  const by = ch.facing === 0 || ch.facing === 2 ? -6.6*u*sq : -7.4*u*sq;
+  block(bx, by, 1.3*u, 0.9*u*sq, 0.8*u, '#ffb03a', '#d88a1f');
+  // bandana tied around the forehead, just above the eyes
+  if (!dead){
+    const bandX = hx - 0.3*u, bandW = 3.2*u, bandY = -9.6*u*sq, bandH = 0.5*u*sq, bandDepth = 0.35*u;
+    block(bandX, bandY, bandW, bandH, bandDepth, pal.band, pal.bandDark);
+    ctx.fillStyle = '#fffef5';
+    ctx.globalAlpha = 0.55;
+    ctx.fillRect(bandX + 0.6*u, bandY + bandH - 0.35*u, 0.4*u, 0.35*u);
+    ctx.fillRect(bandX + 2*u, bandY + bandH - 0.35*u, 0.4*u, 0.35*u);
+    ctx.globalAlpha = 1;
+    const tailDir = ch.facing === 1 ? -1 : ch.facing === 3 ? 1 : ch.facing === 0 ? 1 : -1;
+    const tx = tailDir > 0 ? bandX + bandW : bandX;
+    ctx.fillStyle = pal.bandDark;
+    ctx.beginPath();
+    ctx.moveTo(tx, bandY + 0.05*u*sq);
+    ctx.lineTo(tx + tailDir * 1.3*u, bandY + 0.9*u*sq);
+    ctx.lineTo(tx, bandY + 1.5*u*sq);
+    ctx.closePath(); ctx.fill();
+  }
+  // eyes
+  if (!gone){
+    ctx.fillStyle = '#1c2a30';
+    if (ch.facing !== 2){
+      const ex = ch.facing === 1 ? 2*u : ch.facing === 3 ? -2.6*u : hx;
+      ctx.fillRect(ex, -9*u*sq, 0.62*u, 0.62*u);
+      if (ch.facing === 0) ctx.fillRect(hx + 2*u, -9*u*sq, 0.62*u, 0.62*u);
+    }
+  } else {
+    ctx.strokeStyle = '#1c2a30'; ctx.lineWidth = u * 0.28;
+    ctx.beginPath();
+    ctx.moveTo(hx, -8.8*u*sq); ctx.lineTo(hx + u, -8*u*sq);
+    ctx.moveTo(hx + u, -8.8*u*sq); ctx.lineTo(hx, -8*u*sq);
+    ctx.stroke();
+  }
+  // wing
+  block(-3.9*u, -4.6*u*sq, 1*u, 1.6*u*sq, 1.2*u*sq, pal.wing, pal.wingSide);
+  ctx.restore();
+}
+
+function crackBranches(h, r, reach){        // the four jagged fissure arms
+  ctx.beginPath();
+  for (let k = 0; k < 4; k++){
+    const u = T / 10;
+    const a = k * 1.57 + hash(r, h.c * 4 + k) * 1.2;
+    const len = T * 0.26 * reach * (0.7 + hash(r, h.c * 4 + k + 9) * 0.6);
+    ctx.moveTo(0, 0);
+    ctx.lineTo(Math.cos(a) * len * 0.5 + (hash(r, h.c + k) - 0.5) * u,
+               Math.sin(a) * len * 0.3 + (hash(r, h.c + k + 3) - 0.5) * u);
+    ctx.lineTo(Math.cos(a) * len, Math.sin(a) * len * 0.6);
+  }
+  ctx.stroke();
+}
+function fissurePath(h, r, scale){          // jagged shard-edged gap, not a circle
+  ctx.beginPath();
+  for (let k = 0; k < 8; k++){
+    const a = k / 8 * Math.PI * 2;
+    const rad = T * (0.2 + hash(r, h.c * 8 + k) * 0.18) * scale;
+    const px = Math.cos(a) * rad, py = Math.sin(a) * rad * 0.62;
+    if (k) ctx.lineTo(px, py); else ctx.moveTo(px, py);
+  }
+  ctx.closePath();
+}
+function drawHole(h, r){
+  const u = T / 10;
+  const cx = BX + h.c * T + T / 2;
+  const cy = rowScreenY(r) + T * 0.5;
+  ctx.save();
+  if (h.phase === 'open'){
+    ctx.translate(cx, cy);
+    // fissures spread far past the shattered tile
+    ctx.strokeStyle = '#2b2b33'; ctx.lineWidth = Math.max(2, u * 0.5); ctx.lineCap = 'round';
+    crackBranches(h, r, 2.1);
+    ctx.fillStyle = '#3a3a44';               // splintered shard rim
+    fissurePath(h, r, 1.3); ctx.fill();
+    ctx.fillStyle = '#131318';               // the gap the chicken fell through
+    fissurePath(h, r, 1); ctx.fill();
+    ctx.restore();
+    return;
+  }
+  // cracked → breaking: the crack spreads and trembles before letting go
+  const grow = h.phase === 'breaking' ? 1 + (1 - Math.max(0, h.t) / 0.4) * 0.9 : 1;
+  const jx = h.phase === 'breaking' ? (Math.random() - 0.5) * u * 0.9 : 0;
+  const jy = h.phase === 'breaking' ? (Math.random() - 0.5) * u * 0.9 : 0;
+  ctx.translate(cx + jx, cy + jy);
+  ctx.strokeStyle = '#2b2b33'; ctx.lineWidth = Math.max(1.5, u * 0.32 * grow); ctx.lineCap = 'round';
+  crackBranches(h, r, grow);
+  ctx.fillStyle = '#2b2b33';
+  ctx.beginPath(); ctx.ellipse(0, 0, T * 0.1 * grow, T * 0.07 * grow, 0, 0, 7); ctx.fill();
+  ctx.restore();
+}
+
+function drawGhost(p){
+  const ch = p.chicken;
+  const now = performance.now();
+  if (now < p.ghostRiseAt) return;      // still tumbling through the crack as a corpse
+  let fall = 0;
+  if (p.ghostGone){
+    fall = (now - p.ghostFall) / 450;
+    if (fall >= 1) return;              // dragged under for good
+  }
+  const rise = Math.min(1, (now - p.ghostRiseAt) / GHOST_RISE);
+  const u = T / 10;
+  const x = BX + ch.colF * T;
+  const y = rowScreenY(ch.rowF) + T;
+  const lift = (ch.z * 0.5 + 0.55 * rise) * T + Math.sin(now / 280 + p.idx * 2) * T * 0.06 * rise;
+  ctx.save();
+  ctx.globalAlpha = 0.55 * (0.3 + 0.7 * rise);
+  ctx.translate(x + T / 2, y - lift);
+  if (fall > 0){                        // sucked down through the crack
+    ctx.translate(0, fall * (T * 0.75 + lift));
+    ctx.scale(1 - fall * 0.85, 1 - fall * 0.85);
+    ctx.rotate(fall * (hash(ch.row, ch.col) - 0.5) * 2.4);
+    ctx.globalAlpha *= 1 - fall * 0.6;
+  }
+  const B = '#e6f3ff', S = '#b9d3e8';
+  // body + wispy trailing hem instead of feet
+  block(-3.2*u, -5.5*u, 6.4*u, 3*u, 3.4*u, B, S);
+  ctx.fillStyle = S;
+  ctx.beginPath();
+  for (let k = 0; k < 4; k++){
+    const wx = -3.2*u + k * 1.6*u;
+    ctx.moveTo(wx, 0.9*u);
+    ctx.lineTo(wx + 0.8*u, 2.2*u + Math.sin(now / 200 + k) * 0.5*u);
+    ctx.lineTo(wx + 1.6*u, 0.9*u);
+  }
+  ctx.fill();
+  // head, pale comb, pale beak — same pose logic as the living bird
+  const hx = ch.facing === 1 ? 0.8*u : ch.facing === 3 ? -2.6*u : -1*u;
+  block(hx, -8.5*u, 2.6*u, 2.2*u, 2.4*u, B, S);
+  block(hx + 0.5*u, -9.6*u, 1.4*u, 1*u, 0.6*u, '#cfe0f5', '#a9bed4');
+  const bx = ch.facing === 1 ? 3.4*u : ch.facing === 3 ? -4.6*u : hx + 0.65*u;
+  const by = ch.facing === 0 || ch.facing === 2 ? -6.6*u : -7.4*u;
+  block(bx, by, 1.3*u, 0.9*u, 0.8*u, '#d8e6f2', '#b0c4d6');
+  // bandana still worn in the afterlife — solid, since cloth doesn't go translucent
+  const pal = PALS[p.idx];
+  const bandX = hx - 0.3*u, bandW = 3.2*u, bandY = -9.6*u, bandH = 0.5*u, bandDepth = 0.35*u;
+  const ghostAlpha = ctx.globalAlpha;
+  ctx.globalAlpha = fall > 0 ? 1 - fall * 0.6 : 1;
+  block(bandX, bandY, bandW, bandH, bandDepth, pal.band, pal.bandDark);
+  const tailDir = ch.facing === 1 ? -1 : ch.facing === 3 ? 1 : ch.facing === 0 ? 1 : -1;
+  const tx = tailDir > 0 ? bandX + bandW : bandX;
+  ctx.fillStyle = pal.bandDark;
+  ctx.beginPath();
+  ctx.moveTo(tx, bandY + 0.05*u);
+  ctx.lineTo(tx + tailDir * 1.3*u, bandY + 0.9*u);
+  ctx.lineTo(tx, bandY + 1.5*u);
+  ctx.closePath(); ctx.fill();
+  ctx.globalAlpha = ghostAlpha;
+  ctx.fillStyle = '#1c2a30';
+  if (ch.facing !== 2){
+    const ex = ch.facing === 1 ? 2*u : ch.facing === 3 ? -2.6*u : hx;
+    ctx.fillRect(ex, -9*u, 0.62*u, 0.62*u);
+    if (ch.facing === 0) ctx.fillRect(hx + 2*u, -9*u, 0.62*u, 0.62*u);
+  }
+  // owner tag so everyone knows whose ghost is hunting them
+  ctx.fillStyle = PALS[p.idx].tag;
+  ctx.fillRect(-0.7*u, -12.2*u, 1.4*u, 1.4*u);
+  ctx.restore();
+}
+
+function drawTree(c, r){
+  const x = BX + c * T, y = rowScreenY(r) + T;
+  const u = T / 10;
+  const map = MAPS[mapKey];
+  shadow(x + T/2, y - u, T * 0.36);
+  block(x + 3.6*u, y - 3.4*u, 2.8*u, 1.6*u, 2*u, nightTint(map.trunkLight, dayT), nightTint(map.trunk, dayT));
+  ctx.fillStyle = nightTint(map.trunkTop, dayT);
+  ctx.fillRect(x + 3.6*u, y - 5.2*u, 2.8*u, 2*u);
+  block(x + 1.6*u, y - 8*u, 6.8*u, 3.4*u, 3*u, nightTint(map.foliage, dayT), shadeTint(map.foliage, -30, dayT));
+  block(x + 2.6*u, y - 10.6*u, 4.8*u, 2.4*u, 2*u, nightTint(map.foliageLight, dayT), shadeTint(map.foliageLight, -30, dayT));
+}
+
+function drawCar(row, c, r){
+  const x = BX + carX(row, c) * T, y = rowScreenY(r) + T;
+  const u = T / 10, w = c.len * T;
+  const dark = shadeColor(c.color, -28);
+  shadow(x + w/2, y - 0.6*u, w * 0.42);
+  // wheels
+  ctx.fillStyle = '#26262c';
+  ctx.fillRect(x + 1.2*u, y - 2.4*u, 1.6*u, 2*u);
+  ctx.fillRect(x + w - 2.8*u, y - 2.4*u, 1.6*u, 2*u);
+  // body
+  block(x + 0.4*u, y - 5.6*u, w - 0.8*u, 3.2*u, 2.6*u, c.color, dark);
+  // cab / window
+  const cabX = row.dir > 0 ? x + w * 0.42 : x + w * 0.14;
+  block(cabX, y - 7.4*u, w * 0.42, 1.8*u, 1.4*u, '#bfe8f2', '#7fb6c4');
+  // headlights — glow brighter once the sun's down
+  const hx2 = row.dir > 0 ? x + w - 1*u : x + 0.4*u;
+  if (dayT > 0.5){
+    const glowA = (dayT - 0.5) / 0.5;
+    ctx.fillStyle = `rgba(255,238,160,${0.5 * glowA})`;
+    ctx.beginPath(); ctx.arc(hx2 + 0.3*u, y - 4.7*u, u * 1.6, 0, 7); ctx.fill();
+  }
+  ctx.fillStyle = '#fff3c4';
+  ctx.fillRect(hx2, y - 5.2*u, 0.6*u, 1*u);
+}
+function drawLog(row, l, r){
+  const x = BX + carX(row, l) * T, y = rowScreenY(r) + T;
+  const u = T / 10, w = l.len * T;
+  block(x + 0.3*u, y - 2.6*u, w - 0.6*u, 1.8*u, 1.4*u, '#b98a5a', '#8a5f36');
+  ctx.fillStyle = '#9a6c40';                 // end grain
+  ctx.fillRect(x + 0.3*u, y - 4*u, 0.9*u, 1.8*u);
+  ctx.fillRect(x + w - 1.2*u, y - 4*u, 0.9*u, 1.8*u);
+}
+function drawTrain(row, r){
+  const y = rowScreenY(r) + T, u = T / 10;
+  const x0 = BX + row.trainX * T;
+  const segs = 5, segW = row.trainLen * T / segs;
+  for (let i = 0; i < segs; i++){
+    const sx = x0 + i * segW;
+    const loco = row.dir > 0 ? i === segs - 1 : i === 0;
+    block(sx + 1, y - 6.5*u, segW - 3, 4.2*u, 3.6*u,
+          loco ? '#c9432b' : '#67707a', loco ? '#93301d' : '#4d545c');
+    ctx.fillStyle = '#bfe8f2';
+    for (let wx = sx + 2*u; wx < sx + segW - 3*u; wx += 2.4*u)
+      ctx.fillRect(wx, y - 8.6*u, 1.3*u, 1.7*u);
+  }
+}
+function drawSignal(px, r, row){
+  const y = rowScreenY(r) + T, u = T / 10;
+  ctx.fillStyle = '#5a5a60';
+  ctx.fillRect(px - 0.5*u, y - 9*u, 1*u, 9*u);              // pole
+  ctx.fillStyle = '#3b3b42';
+  ctx.fillRect(px - 2.4*u, y - 12.4*u, 4.8*u, 3.6*u);       // twin-light head
+  const active = row.phase !== 'idle';
+  const blink = Math.floor(performance.now() / 250) % 2;
+  ctx.fillStyle = active && blink === 0 ? '#ff5a3c' : '#55302b';
+  ctx.beginPath(); ctx.arc(px - 1.15*u, y - 10.6*u, 0.9*u, 0, 7); ctx.fill();
+  ctx.fillStyle = active && blink === 1 ? '#ff5a3c' : '#55302b';
+  ctx.beginPath(); ctx.arc(px + 1.15*u, y - 10.6*u, 0.9*u, 0, 7); ctx.fill();
+}
+function shadeColor(hex, amt){
+  const n = parseInt(hex.slice(1), 16);
+  const r = Math.max(0, Math.min(255, (n >> 16) + amt));
+  const g = Math.max(0, Math.min(255, ((n >> 8) & 255) + amt));
+  const b = Math.max(0, Math.min(255, (n & 255) + amt));
+  return `rgb(${r},${g},${b})`;
+}
+
+/* ---------------- render ---------------- */
+function drawVsHud(){
+  const n = players.length;
+  const fs = Math.max(20, Math.min(40, W * 0.03 / Math.max(1, n / 2)));
+  ctx.font = `900 ${fs}px "Avenir Next","Helvetica Neue",Futura,system-ui,sans-serif`;
+  ctx.textBaseline = 'top'; ctx.textAlign = 'center';
+  for (let i = 0; i < n; i++){
+    const p = players[i];
+    const x = W * (i + 0.5) / n;
+    const label = p.alive ? `${PALS[i].name}  ${p.score}`
+                : p.ghost ? `${PALS[i].name} 👻 ${p.score}`
+                : `${PALS[i].name} ✗ ${p.score}`;
+    ctx.globalAlpha = p.alive ? 1 : 0.55;
+    ctx.fillStyle = 'rgba(28,42,48,.4)';
+    ctx.fillText(label, x, 15);
+    ctx.fillStyle = PALS[i].tag;
+    ctx.fillText(label, x, 12);
+    ctx.globalAlpha = 1;
+  }
+}
+
+function render(){
+  ctx.save();
+  if (shake > 0){
+    ctx.translate((Math.random() - 0.5) * shake * 14, (Math.random() - 0.5) * shake * 14);
+  }
+  const lo = Math.max(0, Math.floor(cam) - 2);
+  const hi = Math.floor(cam) + Math.ceil(H / T) + 2;
+  const map = MAPS[mapKey];
+
+  // sky: gradient shifts from midday through sunset to night as the leader goes farther
+  const sky = skyColors(dayT);
+  const skyGrad = ctx.createLinearGradient(0, 0, 0, H);
+  skyGrad.addColorStop(0, sky.top);
+  skyGrad.addColorStop(1, sky.bottom);
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(-16, -16, W + 32, H + 32);           // padded so a death-shake never bares a seam
+  if (dayT > 0.55){
+    const starA = Math.min(1, (dayT - 0.55) / 0.35);
+    ctx.fillStyle = `rgba(255,254,245,${starA})`;
+    for (const s of STARS) ctx.fillRect(s.x * W, s.y * H, s.r, s.r);
+    ctx.save();
+    ctx.globalAlpha = starA;
+    ctx.fillStyle = '#f3edd9';
+    ctx.beginPath(); ctx.arc(W * 0.82, H * 0.14, Math.min(W, H) * 0.035, 0, 7); ctx.fill();
+    ctx.fillStyle = sky.top;
+    ctx.beginPath(); ctx.arc(W * 0.82 - Math.min(W, H) * 0.014, H * 0.14 - Math.min(W, H) * 0.008, Math.min(W, H) * 0.03, 0, 7); ctx.fill();
+    ctx.restore();
+  }
+
+  // ground strips, far → near
+  for (let r = hi; r >= lo; r--){
+    const y = rowScreenY(r), row = rows[r];
+    if (!row) continue;
+    if (row.type === 'grass'){
+      ctx.fillStyle = nightTint(r % 2 ? map.grassB : map.grassA, dayT);
+      ctx.fillRect(0, y, W, T + 1);
+    } else if (row.type === 'water'){
+      ctx.fillStyle = nightTint(r % 2 ? map.waterB : map.waterA, dayT);
+      ctx.fillRect(0, y, W, T + 1);
+      // drifting glints on the current
+      ctx.fillStyle = `rgba(255,254,245,${0.2 * (1 - dayT * 0.5)})`;
+      const drift = ((performance.now() / 1000 * row.speed * row.dir * T) % (T * 2.6) + T * 2.6) % (T * 2.6);
+      for (let x = -T * 2.6 + drift; x < W + T; x += T * 2.6)
+        ctx.fillRect(x, y + T * 0.6, T * 0.5, Math.max(2, T * 0.05));
+    } else if (row.type === 'rail'){
+      ctx.fillStyle = nightTint('#9a9284', dayT);
+      ctx.fillRect(0, y, W, T + 1);
+      ctx.fillStyle = nightTint('#7b7466', dayT);             // sleepers
+      for (let x = T * 0.1; x < W; x += T * 0.75) ctx.fillRect(x, y + T * 0.16, T * 0.36, T * 0.68);
+      ctx.fillStyle = nightTint('#4c4c56', dayT);             // rails
+      ctx.fillRect(0, y + T * 0.28, W, T * 0.09);
+      ctx.fillRect(0, y + T * 0.63, W, T * 0.09);
+    } else {
+      ctx.fillStyle = nightTint('#4c4c56', dayT);
+      ctx.fillRect(0, y, W, T + 1);
+      // dashed divider when the next-far row is also road
+      if (rows[r + 1] && rows[r + 1].type === 'road'){
+        ctx.fillStyle = `rgba(255,254,245,${0.5 * (1 - dayT * 0.35)})`;
+        for (let x = T * 0.3; x < W; x += T * 1.4) ctx.fillRect(x, y + 1, T * 0.55, 3);
+      }
+      for (const h of row.holes) drawHole(h, r);
+    }
+  }
+
+  // entities far → near, each chicken inserted at its own depth
+  const byDepth = [...players].sort((a, b) => b.chicken.rowF - a.chicken.rowF);
+  let di = 0;
+  for (let r = hi; r >= lo; r--){
+    const row = rows[r];
+    if (row){
+      if (row.type === 'grass'){
+        // stable pseudo-random forest in the off-board margins
+        for (let c = -marginCols; c < 0; c++) if (hash(r, c) < 0.4) drawTree(c, r);
+        for (let c = 0; c < COLS; c++) if (row.trees[c]) drawTree(c, r);
+        for (let c = COLS; c < COLS + marginCols; c++) if (hash(r, c) < 0.4) drawTree(c, r);
+      } else if (row.type === 'water'){
+        for (const l of row.logs) drawLog(row, l, r);
+      } else if (row.type === 'rail'){
+        drawSignal(BX + (marginCols > 0 ? -0.35 : 0.35) * T, r, row);
+        drawSignal(BX + COLS * T + (marginCols > 0 ? 0.35 : -0.35) * T, r, row);
+        if (row.phase === 'train') drawTrain(row, r);
+      } else {
+        for (const c of row.cars) drawCar(row, c, r);
+      }
+    }
+    // a chicken sits in front of its own row's logs and behind nearer rows
+    while (di < byDepth.length && byDepth[di].chicken.rowF >= r - 0.5){ drawChicken(byDepth[di]); di++; }
+  }
+  while (di < byDepth.length){ drawChicken(byDepth[di]); di++; }
+
+  // feathers
+  for (const f of feathers){
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, f.life * 2);
+    ctx.translate(BX + f.x * T, rowScreenY(f.y) + T - f.z * T);
+    ctx.rotate(f.rot);
+    ctx.fillStyle = f.color;
+    ctx.fillRect(-T*0.07, -T*0.045, T*0.14, T*0.09);
+    ctx.restore();
+  }
+  // ghosts float above the whole scene
+  for (const p of players) if (p.ghost || p.ghostGone) drawGhost(p);
+  ctx.restore();
+  if (mode > 1) drawVsHud();
+}
+
+/* ---------------- main loop ---------------- */
+function frame(now){
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  update(dt);
+  render();
+  requestAnimationFrame(frame);
+}
+resetGame();
+requestAnimationFrame(frame);
+</script>
+
+</body></html>
