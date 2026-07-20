@@ -1,0 +1,1159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tetris Duel</title>
+<style>
+  :root {
+    --bg: #0b0e17;
+    --panel: #121728;
+    --panel-edge: #1e2540;
+    --ink: #e8ecf5;
+    --muted: #7e869e;
+    --p1: #3ee6c0;
+    --p2: #ffb454;
+    --danger: #f0607a;
+  }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(1200px 600px at 50% -10%, #141a30 0%, var(--bg) 60%);
+    color: var(--ink);
+    font-family: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+    padding: 20px 16px 28px;
+    box-sizing: border-box;
+  }
+  header { text-align: center; margin-bottom: 18px; }
+  h1 {
+    font-size: clamp(22px, 4vw, 34px);
+    font-weight: 800;
+    letter-spacing: 0.42em;
+    text-transform: uppercase;
+    margin: 0;
+    text-wrap: balance;
+  }
+  h1 .vs-a { color: var(--p1); }
+  h1 .vs-b { color: var(--p2); }
+  .tagline {
+    color: var(--muted);
+    font-size: 12px;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    margin-top: 8px;
+  }
+  .arena {
+    display: flex;
+    gap: 22px;
+    align-items: stretch;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .player {
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 6px;
+    padding: 14px;
+    display: flex;
+    gap: 12px;
+  }
+  .player[data-p="2"] { flex-direction: row-reverse; }
+  .boardwrap { position: relative; line-height: 0; }
+  canvas.board {
+    width: 240px;
+    height: 480px;
+    display: block;
+    border: 1px solid var(--panel-edge);
+    background: #0a0d16;
+  }
+  .side {
+    width: 96px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .side .label {
+    font-size: 10px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .pname {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    padding-bottom: 10px;
+    border-bottom: 2px solid;
+  }
+  .player[data-p="1"] .pname { color: var(--p1); border-color: var(--p1); }
+  .player[data-p="2"] .pname { color: var(--p2); border-color: var(--p2); }
+  canvas.next {
+    width: 96px;
+    height: 72px;
+    display: block;
+    background: #0a0d16;
+    border: 1px solid var(--panel-edge);
+  }
+  .stat { font-variant-numeric: tabular-nums; }
+  .stat .value { font-size: 20px; font-weight: 700; }
+  .pause-stat .value { font-size: 13px; font-weight: 700; }
+  .player[data-p="1"] .pause-stat .value.ready { color: var(--p1); }
+  .player[data-p="2"] .pause-stat .value.ready { color: var(--p2); }
+  .pause-stat .value.used { color: var(--muted); }
+  .incoming .meter {
+    display: flex;
+    flex-direction: column-reverse;
+    gap: 3px;
+    min-height: 66px;
+    justify-content: flex-start;
+  }
+  .incoming .seg {
+    height: 8px;
+    background: var(--danger);
+    border-radius: 2px;
+    box-shadow: 0 0 8px rgba(240, 96, 122, 0.5);
+  }
+  .incoming .none { color: var(--muted); font-size: 11px; }
+  .spine {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    min-width: 90px;
+  }
+  .spine .vs {
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+  }
+  .spine .status {
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+    text-align: center;
+  }
+  button.restart {
+    font: inherit;
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--ink);
+    background: transparent;
+    border: 1px solid var(--panel-edge);
+    border-radius: 4px;
+    padding: 9px 14px;
+    cursor: pointer;
+  }
+  button.restart:hover { border-color: var(--muted); }
+  button.restart:focus-visible { outline: 2px solid var(--p1); outline-offset: 2px; }
+  button.restart.on { border-color: var(--p1); color: var(--p1); }
+  button.restart.hidden { display: none; }
+  .cpu-speed {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+  .cpu-speed.hidden { display: none; }
+  .cpu-speed input {
+    width: 100px;
+    accent-color: var(--p2);
+    cursor: pointer;
+  }
+  .cpu-speed input:focus-visible { outline: 2px solid var(--p1); outline-offset: 2px; }
+  .cpu-speed .val { color: var(--ink); }
+  footer {
+    margin-top: 20px;
+    display: flex;
+    gap: 40px;
+    flex-wrap: wrap;
+    justify-content: center;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  footer .keys { display: grid; grid-template-columns: auto auto; gap: 4px 12px; }
+  footer .keyset-title {
+    grid-column: 1 / -1;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    font-size: 10px;
+    margin-bottom: 4px;
+  }
+  footer .keyset-title.p1 { color: var(--p1); }
+  footer .keyset-title.p2 { color: var(--p2); }
+  kbd {
+    font: inherit;
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 3px;
+    padding: 1px 6px;
+    color: var(--ink);
+  }
+  .overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(8, 10, 18, 0.86);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+  }
+  .overlay.hidden { display: none; }
+  .overlay .card {
+    text-align: center;
+    padding: 36px 44px;
+    border: 1px solid var(--panel-edge);
+    border-radius: 8px;
+    background: var(--panel);
+    max-width: 420px;
+  }
+  .overlay .big {
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: 0.3em;
+    text-transform: uppercase;
+    margin: 0 0 14px;
+    text-wrap: balance;
+  }
+  .overlay .sub { color: var(--muted); font-size: 13px; line-height: 1.7; margin: 0; }
+  .overlay .hint {
+    margin-top: 22px;
+    font-size: 11px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink);
+    animation: pulse 1.6s ease-in-out infinite;
+    font-variant-numeric: tabular-nums;
+  }
+  @keyframes pulse { 50% { opacity: 0.35; } }
+  @media (prefers-reduced-motion: reduce) {
+    .overlay .hint { animation: none; }
+  }
+  @media (max-width: 900px) {
+    .spine { min-width: 0; width: 100%; order: 3; flex-direction: row; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1><span class="vs-a">Tetris</span> <span class="vs-b">Duel</span></h1>
+  <div class="tagline">Clear multiple lines &mdash; bury your opponent</div>
+</header>
+
+<div class="arena">
+  <section class="player" data-p="1">
+    <div class="boardwrap"><canvas class="board" id="board1" width="240" height="480"></canvas></div>
+    <div class="side">
+      <div class="pname">Player 1</div>
+      <div>
+        <div class="label">Next</div>
+        <canvas class="next" id="next1" width="96" height="72"></canvas>
+      </div>
+      <div class="stat"><div class="label">Score</div><div class="value" id="score1">0</div></div>
+      <div class="stat"><div class="label">Lines</div><div class="value" id="lines1">0</div></div>
+      <div class="stat"><div class="label">Level</div><div class="value" id="level1">1</div></div>
+      <div class="stat pause-stat"><div class="label">Pause</div><div class="value ready" id="pause1">Ready</div></div>
+      <div class="incoming">
+        <div class="label">Incoming</div>
+        <div class="meter" id="incoming1"><span class="none">&mdash;</span></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="spine">
+    <div class="vs">VS</div>
+    <div class="status" id="status">Press any key</div>
+    <button class="restart" id="restartBtn" type="button">Restart&nbsp;(R)</button>
+    <button class="restart" id="musicBtn" type="button">Music&nbsp;(M):&nbsp;On</button>
+    <button class="restart" id="sameBtn" type="button">Same&nbsp;blocks&nbsp;(B):&nbsp;Off</button>
+    <button class="restart" id="oppBtn" type="button">Opponent&nbsp;(C):&nbsp;Human</button>
+    <button class="restart hidden" id="lvlBtn" type="button">CPU&nbsp;level&nbsp;(L):&nbsp;Easy</button>
+    <div class="cpu-speed hidden" id="cpuSpeedWrap">
+      <label for="cpuSpeedSlider">CPU speed <span class="val" id="cpuSpeedVal">5%</span></label>
+      <input type="range" id="cpuSpeedSlider" min="5" max="100" step="5" value="5">
+    </div>
+  </div>
+
+  <section class="player" data-p="2">
+    <div class="boardwrap"><canvas class="board" id="board2" width="240" height="480"></canvas></div>
+    <div class="side">
+      <div class="pname" id="pname2">Player 2</div>
+      <div>
+        <div class="label">Next</div>
+        <canvas class="next" id="next2" width="96" height="72"></canvas>
+      </div>
+      <div class="stat"><div class="label">Score</div><div class="value" id="score2">0</div></div>
+      <div class="stat"><div class="label">Lines</div><div class="value" id="lines2">0</div></div>
+      <div class="stat"><div class="label">Level</div><div class="value" id="level2">1</div></div>
+      <div class="stat pause-stat"><div class="label">Pause</div><div class="value ready" id="pause2">Ready</div></div>
+      <div class="incoming">
+        <div class="label">Incoming</div>
+        <div class="meter" id="incoming2"><span class="none">&mdash;</span></div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<footer>
+  <div class="keys">
+    <div class="keyset-title p1">Player 1</div>
+    <span><kbd>A</kbd> <kbd>D</kbd></span><span>move</span>
+    <span><kbd>W</kbd></span><span>rotate</span>
+    <span><kbd>S</kbd></span><span>soft drop</span>
+    <span><kbd>Space</kbd></span><span>hard drop</span>
+    <span><kbd>Q</kbd></span><span>pause</span>
+  </div>
+  <div class="keys">
+    <div class="keyset-title p2" id="p2KeysTitle">Player 2</div>
+    <span><kbd>&larr;</kbd> <kbd>&rarr;</kbd></span><span>move</span>
+    <span><kbd>&uarr;</kbd></span><span>rotate</span>
+    <span><kbd>&darr;</kbd></span><span>soft drop</span>
+    <span><kbd>Enter</kbd></span><span>hard drop</span>
+    <span><kbd>P</kbd></span><span>pause</span>
+  </div>
+  <div class="keys">
+    <div class="keyset-title">Battle</div>
+    <span>2 lines</span><span>send 1 row</span>
+    <span>3 lines</span><span>send 2 rows</span>
+    <span>4 lines</span><span>send 4 rows</span>
+    <span>pause</span><span>once each, 30s max</span>
+    <span><kbd>B</kbd></span><span>same blocks</span>
+    <span><kbd>C</kbd></span><span>vs computer</span>
+    <span><kbd>L</kbd></span><span>cpu level</span>
+  </div>
+</footer>
+
+<div class="overlay" id="overlay">
+  <div class="card">
+    <p class="big" id="overlayTitle"><span class="vs-a" style="color:var(--p1)">Tetris</span> <span style="color:var(--p2)">Duel</span></p>
+    <p class="sub" id="overlayText">
+      First to top out loses. Clearing 2, 3, or 4 lines at once sends
+      1, 2, or 4 garbage rows to your opponent &mdash; they land when
+      their current piece locks. Watch the red Incoming meter.
+      Each player can pause the match once per game &mdash; Q for
+      Player 1, P for Player 2 &mdash; for up to 30 seconds; the same
+      key resumes. Turn on Same blocks (B) to give both players the
+      identical piece sequence, or set Opponent (C) to Computer to
+      play solo against the machine.
+    </p>
+    <div class="hint" id="overlayHint">Press any key to start</div>
+  </div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  const COLS = 10, ROWS = 20, CELL = 24;
+  const COLORS = {
+    I: "#3fd8e8", O: "#f5d547", T: "#b07ef0", S: "#6fdd6f",
+    Z: "#f0607a", J: "#5b8cff", L: "#ffa057", G: "#4a5062"
+  };
+  const SHAPES = {
+    I: [[0,0,0,0],[1,1,1,1],[0,0,0,0],[0,0,0,0]],
+    O: [[1,1],[1,1]],
+    T: [[0,1,0],[1,1,1],[0,0,0]],
+    S: [[0,1,1],[1,1,0],[0,0,0]],
+    Z: [[1,1,0],[0,1,1],[0,0,0]],
+    J: [[1,0,0],[1,1,1],[0,0,0]],
+    L: [[0,0,1],[1,1,1],[0,0,0]]
+  };
+  const GARBAGE_FOR_CLEAR = { 2: 1, 3: 2, 4: 4 };
+  const SCORE_FOR_CLEAR = { 1: 100, 2: 300, 3: 500, 4: 800 };
+  const PAUSE_LIMIT_MS = 30000;
+
+  function shuffledBag() {
+    const bag = ["I", "O", "T", "S", "Z", "J", "L"];
+    for (let i = bag.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [bag[i], bag[j]] = [bag[j], bag[i]];
+    }
+    return bag;
+  }
+
+  // When "Same blocks" is on, both players read from this one sequence
+  // (each at their own index), so they see identical pieces in order.
+  let sameBlocks = localStorage.getItem("tetris-same-blocks") === "on";
+  const sharedSeq = {
+    pieces: [],
+    reset() { this.pieces.length = 0; },
+    at(i) {
+      while (i >= this.pieces.length) this.pieces.push(...shuffledBag());
+      return this.pieces[i];
+    }
+  };
+
+  function rotateCW(m) {
+    const n = m.length;
+    const r = Array.from({ length: n }, () => Array(n).fill(0));
+    for (let y = 0; y < n; y++)
+      for (let x = 0; x < n; x++)
+        r[x][n - 1 - y] = m[y][x];
+    return r;
+  }
+
+  function setupCanvas(canvas) {
+    const dpr = window.devicePixelRatio || 1;
+    const w = parseInt(canvas.getAttribute("width"), 10);
+    const h = parseInt(canvas.getAttribute("height"), 10);
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    const ctx = canvas.getContext("2d");
+    ctx.scale(dpr, dpr);
+    return ctx;
+  }
+
+  function drawCell(ctx, x, y, size, color, ghost) {
+    const px = x * size, py = y * size;
+    if (ghost) {
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = 0.4;
+      ctx.strokeRect(px + 1.5, py + 1.5, size - 3, size - 3);
+      ctx.globalAlpha = 1;
+      return;
+    }
+    ctx.fillStyle = color;
+    ctx.fillRect(px + 1, py + 1, size - 2, size - 2);
+    ctx.fillStyle = "rgba(255,255,255,0.22)";
+    ctx.fillRect(px + 1, py + 1, size - 2, 3);
+    ctx.fillStyle = "rgba(0,0,0,0.28)";
+    ctx.fillRect(px + 1, py + size - 4, size - 2, 3);
+  }
+
+  class Player {
+    constructor(n) {
+      this.n = n;
+      this.ctx = setupCanvas(document.getElementById("board" + n));
+      this.nextCtx = setupCanvas(document.getElementById("next" + n));
+      this.scoreEl = document.getElementById("score" + n);
+      this.linesEl = document.getElementById("lines" + n);
+      this.levelEl = document.getElementById("level" + n);
+      this.pauseEl = document.getElementById("pause" + n);
+      this.incomingEl = document.getElementById("incoming" + n);
+      this.opponent = null;
+      this.reset();
+    }
+
+    reset() {
+      this.grid = Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+      this.bag = [];
+      this.seqIndex = 0;
+      this.score = 0;
+      this.lines = 0;
+      this.level = 1;
+      this.pendingGarbage = 0;
+      this.dropTimer = 0;
+      this.pieceId = 0;
+      this.pauseUsed = false;
+      this.alive = true;
+      this.next = this.pull();
+      this.spawn();
+      this.updateHud();
+    }
+
+    pull() {
+      if (sameBlocks) return sharedSeq.at(this.seqIndex++);
+      if (this.bag.length === 0) this.bag = shuffledBag();
+      return this.bag.pop();
+    }
+
+    spawn() {
+      this.type = this.next;
+      this.next = this.pull();
+      this.shape = SHAPES[this.type].map(row => row.slice());
+      this.px = Math.floor((COLS - this.shape[0].length) / 2);
+      this.py = this.type === "I" ? -1 : 0;
+      this.dropTimer = 0;
+      this.pieceId++;
+      if (this.collides(this.shape, this.px, this.py)) {
+        this.alive = false;
+      }
+      this.drawNext();
+    }
+
+    collides(shape, px, py) {
+      for (let y = 0; y < shape.length; y++) {
+        for (let x = 0; x < shape[y].length; x++) {
+          if (!shape[y][x]) continue;
+          const gx = px + x, gy = py + y;
+          if (gx < 0 || gx >= COLS || gy >= ROWS) return true;
+          if (gy >= 0 && this.grid[gy][gx]) return true;
+        }
+      }
+      return false;
+    }
+
+    move(dx) {
+      if (!this.collides(this.shape, this.px + dx, this.py)) this.px += dx;
+    }
+
+    rotate() {
+      if (this.type === "O") return;
+      const r = rotateCW(this.shape);
+      for (const kick of [0, -1, 1, -2, 2]) {
+        if (!this.collides(r, this.px + kick, this.py)) {
+          this.shape = r;
+          this.px += kick;
+          return;
+        }
+      }
+    }
+
+    dropInterval() {
+      return Math.max(110, 800 - (this.level - 1) * 70);
+    }
+
+    softDrop() {
+      if (!this.collides(this.shape, this.px, this.py + 1)) {
+        this.py++;
+        this.score++;
+        this.dropTimer = 0;
+        this.updateHud();
+      } else {
+        this.lock();
+      }
+    }
+
+    hardDrop() {
+      let d = 0;
+      while (!this.collides(this.shape, this.px, this.py + 1)) { this.py++; d++; }
+      this.score += d * 2;
+      this.lock();
+    }
+
+    ghostY() {
+      let y = this.py;
+      while (!this.collides(this.shape, this.px, y + 1)) y++;
+      return y;
+    }
+
+    lock() {
+      for (let y = 0; y < this.shape.length; y++) {
+        for (let x = 0; x < this.shape[y].length; x++) {
+          if (!this.shape[y][x]) continue;
+          const gy = this.py + y, gx = this.px + x;
+          if (gy < 0) { this.alive = false; return; }
+          this.grid[gy][gx] = this.type;
+        }
+      }
+      const cleared = this.clearLines();
+      if (cleared > 0) {
+        this.lines += cleared;
+        this.score += SCORE_FOR_CLEAR[cleared] * this.level;
+        this.level = Math.floor(this.lines / 10) + 1;
+        const garbage = GARBAGE_FOR_CLEAR[cleared] || 0;
+        if (garbage > 0 && this.opponent.alive) {
+          this.opponent.pendingGarbage += garbage;
+          this.opponent.updateHud();
+        }
+      }
+      if (this.pendingGarbage > 0) {
+        this.applyGarbage(this.pendingGarbage);
+        this.pendingGarbage = 0;
+      }
+      this.updateHud();
+      if (this.alive) this.spawn();
+    }
+
+    clearLines() {
+      let cleared = 0;
+      for (let y = ROWS - 1; y >= 0; y--) {
+        if (this.grid[y].every(c => c !== null)) {
+          this.grid.splice(y, 1);
+          this.grid.unshift(Array(COLS).fill(null));
+          cleared++;
+          y++;
+        }
+      }
+      return cleared;
+    }
+
+    applyGarbage(count) {
+      const hole = Math.floor(Math.random() * COLS);
+      for (let i = 0; i < count; i++) {
+        const shifted = this.grid.shift();
+        if (shifted.some(c => c !== null)) { this.alive = false; return; }
+        const row = Array(COLS).fill("G");
+        row[hole] = null;
+        this.grid.push(row);
+      }
+    }
+
+    tick(dt) {
+      if (!this.alive) return;
+      this.dropTimer += dt;
+      const interval = this.dropInterval();
+      while (this.dropTimer >= interval) {
+        this.dropTimer -= interval;
+        if (!this.collides(this.shape, this.px, this.py + 1)) {
+          this.py++;
+        } else {
+          this.lock();
+          break;
+        }
+      }
+    }
+
+    updateHud() {
+      this.scoreEl.textContent = this.score;
+      this.linesEl.textContent = this.lines;
+      this.levelEl.textContent = this.level;
+      this.pauseEl.textContent = this.pauseUsed ? "Used" : "Ready";
+      this.pauseEl.classList.toggle("ready", !this.pauseUsed);
+      this.pauseEl.classList.toggle("used", this.pauseUsed);
+      this.incomingEl.innerHTML = "";
+      if (this.pendingGarbage === 0) {
+        this.incomingEl.innerHTML = '<span class="none">&mdash;</span>';
+      } else {
+        for (let i = 0; i < Math.min(this.pendingGarbage, 8); i++) {
+          const seg = document.createElement("span");
+          seg.className = "seg";
+          this.incomingEl.appendChild(seg);
+        }
+      }
+    }
+
+    drawNext() {
+      const ctx = this.nextCtx;
+      ctx.clearRect(0, 0, 96, 72);
+      const shape = SHAPES[this.next];
+      const size = 16;
+      let minX = 4, maxX = -1, minY = 4, maxY = -1;
+      for (let y = 0; y < shape.length; y++)
+        for (let x = 0; x < shape[y].length; x++)
+          if (shape[y][x]) {
+            minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+            minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+          }
+      const w = (maxX - minX + 1) * size, h = (maxY - minY + 1) * size;
+      const ox = (96 - w) / 2, oy = (72 - h) / 2;
+      ctx.save();
+      ctx.translate(ox - minX * size, oy - minY * size);
+      for (let y = 0; y < shape.length; y++)
+        for (let x = 0; x < shape[y].length; x++)
+          if (shape[y][x]) drawCell(ctx, x, y, size, COLORS[this.next], false);
+      ctx.restore();
+    }
+
+    draw() {
+      const ctx = this.ctx;
+      ctx.clearRect(0, 0, COLS * CELL, ROWS * CELL);
+      ctx.strokeStyle = "rgba(126,134,158,0.08)";
+      ctx.lineWidth = 1;
+      for (let x = 1; x < COLS; x++) {
+        ctx.beginPath();
+        ctx.moveTo(x * CELL + 0.5, 0);
+        ctx.lineTo(x * CELL + 0.5, ROWS * CELL);
+        ctx.stroke();
+      }
+      for (let y = 1; y < ROWS; y++) {
+        ctx.beginPath();
+        ctx.moveTo(0, y * CELL + 0.5);
+        ctx.lineTo(COLS * CELL, y * CELL + 0.5);
+        ctx.stroke();
+      }
+      for (let y = 0; y < ROWS; y++)
+        for (let x = 0; x < COLS; x++)
+          if (this.grid[y][x]) drawCell(ctx, x, y, CELL, COLORS[this.grid[y][x]], false);
+      if (this.alive) {
+        const gy = this.ghostY();
+        for (let y = 0; y < this.shape.length; y++)
+          for (let x = 0; x < this.shape[y].length; x++)
+            if (this.shape[y][x]) {
+              if (gy + y >= 0 && gy !== this.py)
+                drawCell(ctx, this.px + x, gy + y, CELL, COLORS[this.type], true);
+            }
+        for (let y = 0; y < this.shape.length; y++)
+          for (let x = 0; x < this.shape[y].length; x++)
+            if (this.shape[y][x] && this.py + y >= 0)
+              drawCell(ctx, this.px + x, this.py + y, CELL, COLORS[this.type], false);
+      } else {
+        ctx.fillStyle = "rgba(11,14,23,0.55)";
+        ctx.fillRect(0, 0, COLS * CELL, ROWS * CELL);
+      }
+    }
+  }
+
+  // ---------- Background music: Korobeiniki, synthesized via WebAudio ----------
+  const music = (() => {
+    const BPM = 149, BEAT = 60 / BPM;
+    // [semitones from A4, beats]; null = rest. Two 16-beat phrases.
+    const MELODY = [
+      [7,1],[2,.5],[3,.5],[5,1],[3,.5],[2,.5],
+      [0,1],[0,.5],[3,.5],[7,1],[5,.5],[3,.5],
+      [2,1.5],[3,.5],[5,1],[7,1],
+      [3,1],[0,1],[0,1],[null,1],
+      [null,.5],[5,1],[8,.5],[12,1],[10,.5],[8,.5],
+      [7,1.5],[3,.5],[7,1],[5,.5],[3,.5],
+      [2,1],[2,.5],[3,.5],[5,1],[7,1],
+      [3,1],[0,1],[0,1],[null,1]
+    ];
+    // Bass roots per 4-beat measure (semitones from A4); root/fifth pulse
+    const BASS_ROOTS = [-24, -24, -29, -24, -19, -21, -29, -24];
+    const freq = (n) => 440 * Math.pow(2, n / 12);
+
+    let ctx = null, master = null, timer = null, playing = false;
+    let muted = localStorage.getItem("tetris-music") === "off";
+
+    function note(t, semi, dur, type, vol, filter) {
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = type;
+      osc.frequency.value = freq(semi);
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(vol, t + 0.012);
+      g.gain.setValueAtTime(vol, t + dur * 0.7);
+      g.gain.linearRampToValueAtTime(0.0001, t + dur * 0.95);
+      osc.connect(g);
+      g.connect(filter || master);
+      osc.start(t);
+      osc.stop(t + dur);
+    }
+
+    function scheduleLoop(t0) {
+      let t = t0;
+      for (const [semi, beats] of MELODY) {
+        if (semi !== null) note(t, semi, beats * BEAT, "square", 0.11, master.lead);
+        t += beats * BEAT;
+      }
+      for (let m = 0; m < 8; m++) {
+        const r = BASS_ROOTS[m];
+        for (let b = 0; b < 4; b++) {
+          note(t0 + (m * 4 + b) * BEAT, b % 2 ? r + 7 : r, BEAT * 0.9, "triangle", 0.16);
+        }
+      }
+      const loopEnd = t0 + 32 * BEAT;
+      timer = setTimeout(() => scheduleLoop(loopEnd), (loopEnd - ctx.currentTime - 0.4) * 1000);
+    }
+
+    function ensureCtx() {
+      if (ctx) return;
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      master = ctx.createGain();
+      master.gain.value = muted ? 0 : 0.5;
+      master.connect(ctx.destination);
+      const lp = ctx.createBiquadFilter();
+      lp.type = "lowpass";
+      lp.frequency.value = 2400;
+      lp.connect(master);
+      master.lead = lp; // soften the square lead
+    }
+
+    return {
+      start() {
+        ensureCtx();
+        if (ctx.state === "suspended") ctx.resume();
+        if (playing) return;
+        playing = true;
+        scheduleLoop(ctx.currentTime + 0.08);
+      },
+      stop() {
+        if (!playing) return;
+        playing = false;
+        clearTimeout(timer);
+        if (ctx) { ctx.close(); ctx = null; }
+      },
+      pause() {
+        if (ctx && ctx.state === "running") ctx.suspend();
+      },
+      resume() {
+        if (ctx && ctx.state === "suspended") ctx.resume();
+      },
+      toggle() {
+        muted = !muted;
+        localStorage.setItem("tetris-music", muted ? "off" : "on");
+        if (master) master.gain.value = muted ? 0 : 0.5;
+        return !muted;
+      },
+      isOn: () => !muted
+    };
+  })();
+
+  // ---------- Computer opponent ----------
+  // Scores every reachable placement of the current piece with the classic
+  // heuristic (cleared lines good; height, holes, bumpiness bad), then
+  // steers toward the best one at a human-ish input rate.
+  let vsComputer = localStorage.getItem("tetris-vs-computer") === "on";
+  // Input rate as a percentage of full speed (5–100); 100% is one
+  // simulated key press every 115 ms.
+  let cpuSpeed = parseInt(localStorage.getItem("tetris-cpu-speed"), 10);
+  if (!(cpuSpeed >= 5 && cpuSpeed <= 100)) cpuSpeed = 5;
+  // Each level sets a default input speed and a placement-noise amplitude:
+  // noise is added to every candidate's heuristic score, so weaker levels
+  // genuinely misjudge placements instead of just moving slowly.
+  const CPU_LEVELS = [
+    { name: "Easy",   speed: 5,   noise: 1.6 },
+    { name: "Medium", speed: 35,  noise: 0.5 },
+    { name: "Hard",   speed: 70,  noise: 0.15 },
+    { name: "Expert", speed: 100, noise: 0 }
+  ];
+  let cpuLevel = parseInt(localStorage.getItem("tetris-cpu-level"), 10);
+  if (!(cpuLevel >= 0 && cpuLevel < CPU_LEVELS.length)) cpuLevel = 0;
+
+  function evaluatePlacement(grid, shape, px, py) {
+    const g = grid.map(row => row.slice());
+    for (let y = 0; y < shape.length; y++)
+      for (let x = 0; x < shape[y].length; x++)
+        if (shape[y][x]) {
+          const gy = py + y, gx = px + x;
+          if (gy < 0) return -1e9;
+          g[gy][gx] = "X";
+        }
+    let lines = 0;
+    for (let y = ROWS - 1; y >= 0; y--) {
+      if (g[y].every(c => c !== null)) {
+        g.splice(y, 1);
+        g.unshift(Array(COLS).fill(null));
+        lines++;
+        y++;
+      }
+    }
+    const heights = Array(COLS).fill(0);
+    let holes = 0;
+    for (let x = 0; x < COLS; x++) {
+      let seen = false;
+      for (let y = 0; y < ROWS; y++) {
+        if (g[y][x] !== null) {
+          if (!seen) { heights[x] = ROWS - y; seen = true; }
+        } else if (seen) {
+          holes++;
+        }
+      }
+    }
+    let agg = 0, bump = 0;
+    for (let x = 0; x < COLS; x++) {
+      agg += heights[x];
+      if (x > 0) bump += Math.abs(heights[x] - heights[x - 1]);
+    }
+    return 0.76 * lines - 0.51 * agg - 0.36 * holes - 0.18 * bump;
+  }
+
+  const ai = {
+    STEP: 115, // ms between simulated key presses
+    plannedFor: -1,
+    target: null,
+    rotLeft: 0,
+    timer: 0,
+    reset() {
+      this.plannedFor = -1;
+      this.target = null;
+      this.rotLeft = 0;
+      this.timer = 0;
+    },
+    plan(p) {
+      let best = null;
+      let shape = SHAPES[p.type].map(row => row.slice());
+      const rotations = p.type === "O" ? 1 : 4;
+      for (let rot = 0; rot < rotations; rot++) {
+        if (rot > 0) shape = rotateCW(shape);
+        for (let px = -3; px < COLS; px++) {
+          if (p.collides(shape, px, p.py)) continue;
+          let y = p.py;
+          while (!p.collides(shape, px, y + 1)) y++;
+          const noise = CPU_LEVELS[cpuLevel].noise;
+          const score = evaluatePlacement(p.grid, shape, px, y) +
+            noise * (Math.random() * 2 - 1);
+          if (best === null || score > best.score) best = { score, rot, px };
+        }
+      }
+      this.target = best || { rot: 0, px: p.px };
+      this.rotLeft = this.target.rot;
+      this.plannedFor = p.pieceId;
+      this.timer = 0;
+    },
+    tick(p, dt) {
+      if (!p.alive) return;
+      if (this.plannedFor !== p.pieceId) this.plan(p);
+      const step = this.STEP * 100 / cpuSpeed;
+      this.timer += dt;
+      while (this.timer >= step) {
+        this.timer -= step;
+        if (this.rotLeft > 0) {
+          p.rotate();
+          this.rotLeft--;
+        } else if (p.px < this.target.px) {
+          p.move(1);
+        } else if (p.px > this.target.px) {
+          p.move(-1);
+        } else {
+          p.hardDrop();
+          break;
+        }
+      }
+    }
+  };
+
+  const p1 = new Player(1);
+  const p2 = new Player(2);
+  p1.opponent = p2;
+  p2.opponent = p1;
+
+  const overlay = document.getElementById("overlay");
+  const overlayTitle = document.getElementById("overlayTitle");
+  const overlayText = document.getElementById("overlayText");
+  const overlayHint = document.getElementById("overlayHint");
+  const statusEl = document.getElementById("status");
+  const restartBtn = document.getElementById("restartBtn");
+
+  let state = "menu"; // menu | playing | paused | over
+  let lastTime = 0;
+  let fightStatus = "";
+  let pausedBy = 0;      // 1 or 2 while paused
+  let pauseUntil = 0;    // performance.now() deadline for auto-resume
+  let statusFlashTimer = 0;
+
+  function startGame() {
+    sharedSeq.reset();
+    ai.reset();
+    p1.reset();
+    p2.reset();
+    state = "playing";
+    pausedBy = 0;
+    clearTimeout(statusFlashTimer);
+    overlay.classList.add("hidden");
+    const modes = [];
+    if (vsComputer) modes.push("vs " + CPU_LEVELS[cpuLevel].name.toLowerCase() + " computer");
+    if (sameBlocks) modes.push("same blocks");
+    fightStatus = "Fight" + (modes.length ? " — " + modes.join(", ") : "");
+    statusEl.textContent = fightStatus;
+    lastTime = performance.now();
+    music.start();
+  }
+
+  // Each player gets one pause per game; it freezes both boards for up
+  // to 30 seconds. The same key resumes early, and only the player who
+  // paused can resume.
+  function pauseGame(n) {
+    const p = n === 1 ? p1 : p2;
+    if (p.pauseUsed) {
+      statusEl.textContent = "Player " + n + " pause used";
+      clearTimeout(statusFlashTimer);
+      statusFlashTimer = setTimeout(() => {
+        if (state === "playing") statusEl.textContent = fightStatus;
+      }, 1500);
+      return;
+    }
+    p.pauseUsed = true;
+    p.updateHud();
+    pausedBy = n;
+    pauseUntil = performance.now() + PAUSE_LIMIT_MS;
+    state = "paused";
+    music.pause();
+    const color = n === 1 ? "var(--p1)" : "var(--p2)";
+    const name = n === 2 && vsComputer ? "Computer" : "Player " + n;
+    overlayTitle.innerHTML =
+      '<span style="color:' + color + '">' + name + " paused</span>";
+    overlayText.textContent =
+      "One pause per player per game, 30 seconds max. " +
+      "The game resumes automatically when time runs out.";
+    overlay.classList.remove("hidden");
+    statusEl.textContent = "Paused";
+  }
+
+  function resumeGame() {
+    state = "playing";
+    pausedBy = 0;
+    overlay.classList.add("hidden");
+    statusEl.textContent = fightStatus;
+    lastTime = performance.now();
+    music.resume();
+  }
+
+  function endGame() {
+    state = "over";
+    const winner = p1.alive ? 1 : 2;
+    const color = winner === 1 ? "var(--p1)" : "var(--p2)";
+    const p2Name = vsComputer ? "Computer" : "Player 2";
+    const winnerName = winner === 1 ? "Player 1" : p2Name;
+    overlayTitle.innerHTML =
+      '<span style="color:' + color + '">' + winnerName + " wins</span>";
+    overlayText.textContent =
+      "Player 1: " + p1.score + " pts, " + p1.lines + " lines  •  " +
+      p2Name + ": " + p2.score + " pts, " + p2.lines + " lines";
+    overlayHint.textContent = "Press R to rematch";
+    overlay.classList.remove("hidden");
+    statusEl.textContent = "Game over";
+    music.stop();
+  }
+
+  function loop(now) {
+    if (state === "playing") {
+      const dt = Math.min(now - lastTime, 100);
+      lastTime = now;
+      p1.tick(dt);
+      p2.tick(dt);
+      if (vsComputer && p1.alive && p2.alive) ai.tick(p2, dt);
+      if (!p1.alive || !p2.alive) endGame();
+    } else if (state === "paused") {
+      lastTime = now;
+      const left = pauseUntil - now;
+      if (left <= 0) {
+        resumeGame();
+      } else {
+        const key = pausedBy === 1 ? "Q" : "P";
+        overlayHint.textContent =
+          "Resumes in " + Math.ceil(left / 1000) + "s — " + key + " to resume now";
+      }
+    } else {
+      lastTime = now;
+    }
+    p1.draw();
+    p2.draw();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+
+  const P1_KEYS = ["KeyA", "KeyD", "KeyW", "KeyS", "Space"];
+  const P2_KEYS = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter"];
+
+  document.addEventListener("keydown", (e) => {
+    if (P1_KEYS.includes(e.code) || P2_KEYS.includes(e.code)) e.preventDefault();
+
+    if (e.code === "KeyM" && !e.repeat) { updateMusicBtn(music.toggle()); return; }
+    if (e.code === "KeyB" && !e.repeat) { toggleSameBlocks(); return; }
+    if (e.code === "KeyC" && !e.repeat) { toggleOpponent(); return; }
+    if (e.code === "KeyL" && !e.repeat && vsComputer) { cycleCpuLevel(); return; }
+    if (state === "menu") { startGame(); return; }
+    if (e.code === "KeyR" && !e.repeat) { startGame(); return; }
+    if (e.code === "KeyQ" && !e.repeat) {
+      if (state === "playing") { pauseGame(1); return; }
+      if (state === "paused" && pausedBy === 1) { resumeGame(); return; }
+    }
+    if (e.code === "KeyP" && !e.repeat && !vsComputer) {
+      if (state === "playing") { pauseGame(2); return; }
+      if (state === "paused" && pausedBy === 2) { resumeGame(); return; }
+    }
+    if (state !== "playing") return;
+
+    if (p1.alive) {
+      switch (e.code) {
+        case "KeyA": p1.move(-1); break;
+        case "KeyD": p1.move(1); break;
+        case "KeyW": if (!e.repeat) p1.rotate(); break;
+        case "KeyS": p1.softDrop(); break;
+        case "Space": if (!e.repeat) p1.hardDrop(); break;
+      }
+    }
+    if (p2.alive && !vsComputer) {
+      switch (e.code) {
+        case "ArrowLeft": p2.move(-1); break;
+        case "ArrowRight": p2.move(1); break;
+        case "ArrowUp": if (!e.repeat) p2.rotate(); break;
+        case "ArrowDown": p2.softDrop(); break;
+        case "Enter": if (!e.repeat) p2.hardDrop(); break;
+      }
+    }
+    if (!p1.alive || !p2.alive) endGame();
+  });
+
+  restartBtn.addEventListener("click", () => { restartBtn.blur(); startGame(); });
+
+  const musicBtn = document.getElementById("musicBtn");
+  function updateMusicBtn(on) {
+    musicBtn.textContent = "Music (M): " + (on ? "On" : "Off");
+  }
+  musicBtn.addEventListener("click", () => {
+    musicBtn.blur();
+    updateMusicBtn(music.toggle());
+  });
+  updateMusicBtn(music.isOn());
+
+  const sameBtn = document.getElementById("sameBtn");
+  function updateSameBtn() {
+    sameBtn.textContent = "Same blocks (B): " + (sameBlocks ? "On" : "Off");
+    sameBtn.classList.toggle("on", sameBlocks);
+  }
+  function toggleSameBlocks() {
+    sameBlocks = !sameBlocks;
+    localStorage.setItem("tetris-same-blocks", sameBlocks ? "on" : "off");
+    updateSameBtn();
+    // Both players must start over from the same point in the sequence,
+    // so flipping the option mid-match begins a fresh round.
+    if (state === "playing" || state === "paused") startGame();
+  }
+  sameBtn.addEventListener("click", () => {
+    sameBtn.blur();
+    toggleSameBlocks();
+  });
+  updateSameBtn();
+
+  const oppBtn = document.getElementById("oppBtn");
+  const pname2 = document.getElementById("pname2");
+  const p2KeysTitle = document.getElementById("p2KeysTitle");
+  const cpuSpeedWrap = document.getElementById("cpuSpeedWrap");
+  const lvlBtn = document.getElementById("lvlBtn");
+  function updateOppBtn() {
+    oppBtn.textContent = "Opponent (C): " + (vsComputer ? "Computer" : "Human");
+    oppBtn.classList.toggle("on", vsComputer);
+    pname2.textContent = vsComputer ? "Computer" : "Player 2";
+    p2KeysTitle.textContent = vsComputer ? "Player 2 — computer plays" : "Player 2";
+    lvlBtn.classList.toggle("hidden", !vsComputer);
+    cpuSpeedWrap.classList.toggle("hidden", !vsComputer);
+  }
+  function toggleOpponent() {
+    vsComputer = !vsComputer;
+    localStorage.setItem("tetris-vs-computer", vsComputer ? "on" : "off");
+    updateOppBtn();
+    // Switching who controls the right board mid-match wouldn't be a fair
+    // fight either way, so begin a fresh round.
+    if (state === "playing" || state === "paused") startGame();
+  }
+  oppBtn.addEventListener("click", () => {
+    oppBtn.blur();
+    toggleOpponent();
+  });
+  updateOppBtn();
+
+  const cpuSpeedSlider = document.getElementById("cpuSpeedSlider");
+  const cpuSpeedVal = document.getElementById("cpuSpeedVal");
+  function updateCpuSpeed() {
+    cpuSpeedSlider.value = cpuSpeed;
+    cpuSpeedVal.textContent = cpuSpeed + "%";
+  }
+  cpuSpeedSlider.addEventListener("input", () => {
+    cpuSpeed = parseInt(cpuSpeedSlider.value, 10);
+    localStorage.setItem("tetris-cpu-speed", cpuSpeed);
+    cpuSpeedVal.textContent = cpuSpeed + "%";
+  });
+  updateCpuSpeed();
+
+  function updateLvlBtn() {
+    lvlBtn.textContent = "CPU level (L): " + CPU_LEVELS[cpuLevel].name;
+  }
+  function cycleCpuLevel() {
+    cpuLevel = (cpuLevel + 1) % CPU_LEVELS.length;
+    localStorage.setItem("tetris-cpu-level", cpuLevel);
+    // Each level brings its own default pace; the slider can still
+    // fine-tune it afterwards.
+    cpuSpeed = CPU_LEVELS[cpuLevel].speed;
+    localStorage.setItem("tetris-cpu-speed", cpuSpeed);
+    updateLvlBtn();
+    updateCpuSpeed();
+  }
+  lvlBtn.addEventListener("click", () => {
+    lvlBtn.blur();
+    cycleCpuLevel();
+  });
+  updateLvlBtn();
+})();
+</script>
+
+</body>
+</html>
