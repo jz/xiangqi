@@ -7,6 +7,7 @@
 <title>RUNWAY — 3D Dress Up</title>
 <style>
 :root{
+  color-scheme:dark;
   --ink:#17131C;
   --ink-2:#1D1823;
   --panel:#221C29;
@@ -4212,7 +4213,9 @@ dbody.addEventListener('click', e=>{
       if(f && deserialize(f.data)){ toast('Fit loaded'); queuePanel(); }
       break;
     }
-    case 'clearfits': localStorage.removeItem(LS_FITS); toast('Closet cleared'); queuePanel(); break;
+    case 'clearfits':
+      try{ localStorage.removeItem(LS_FITS); }catch(e){}
+      toast('Closet cleared'); queuePanel(); break;
     case 'random': randomize(); queuePanel(); break;
     case 'strip': undress(); queuePanel(); break;
     case 'photo': savePhoto(); break;
